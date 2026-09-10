@@ -107,6 +107,14 @@ create policy "anon full access" on notificacions for all using (true) with chec
 create policy "anon full access" on assignacions_cc for all using (true) with check (true);
 create policy "anon full access" on assistencia for all using (true) with check (true);
 
+-- Crear les taules per SQL directe (en lloc del Table Editor) no atorga
+-- permisos a "anon"/"authenticated" automàticament: cal fer-ho explícit,
+-- o encara que les polítiques RLS siguin obertes, Postgres denegarà
+-- l'accés abans d'arribar-hi ("permission denied for table ...").
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+grant usage, select on all sequences in schema public to anon, authenticated;
+
 -- ============================= Emmagatzematge de justificants =============================
 -- Bucket PRIVAT (public = false): els justificants (inclosos els mèdics) no
 -- s'han de poder veure amb un enllaç directe sense signar, per protegir dades

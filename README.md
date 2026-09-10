@@ -113,6 +113,54 @@ supabase link --project-ref rtpsjbtvvnjigpuygrek
 supabase db push
 ```
 
+## Resolució de problemes
+
+**"Could not find the table 'public.workers' in the schema cache"**
+
+Vol dir que l'API de Supabase (PostgREST) no veu les taules a
+**aquest** projecte concret. Gairebé sempre és per una d'aquestes dues
+causes:
+
+1. **El `schema.sql` no s'ha executat en aquest projecte.** És fàcil
+   confondre's si teniu més d'un projecte de Supabase obert. Comprova:
+   - Dashboard → **Table Editor**: hi hauria d'aparèixer la taula
+     `workers`, entre altres. Si no hi és, torna a executar
+     `supabase/schema.sql` (SQL Editor → New query → enganxa-hi tot el
+     contingut → **Run**).
+   - Dashboard → **Project Settings → API → Project URL**: ha de
+     coincidir exactament amb la que hi ha a l'inici de `index.html`
+     (variable `SUPABASE_URL`).
+
+2. **Ja s'ha executat, però l'API encara no s'ha assabentat.** A vegades
+   PostgREST triga uns segons/minuts a refrescar-se després de crear
+   taules noves. Soluciona-ho executant, al SQL Editor:
+
+   ```sql
+   NOTIFY pgrst, 'reload schema';
+   ```
+
+   i tornant a carregar l'aplicació al cap d'uns segons. Si no funciona,
+   una alternativa és **Project Settings → General → Restart project**
+   (reinicia l'API i força la recàrrega de l'esquema).
+
+**"permission denied for table workers" (o qualsevol altra taula)**
+
+Vol dir que la taula ja existeix i l'API la troba, però la clau pública
+(`anon`) no té permisos concedits sobre ella. Passa quan les taules es
+creen per SQL directe en lloc del Table Editor (com fa el nostre
+`schema.sql`), que no atorga permisos automàticament. Soluciona-ho
+executant això al SQL Editor:
+
+```sql
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+grant usage, select on all sequences in schema public to anon, authenticated;
+```
+
+Aquest pas ja està inclòs a `supabase/schema.sql` i a
+`supabase/migrations/`, així que si en el futur creeu el projecte de nou
+des de zero amb aquests fitxers, no us hauria de tornar a passar.
+
 ## Seguretat i xifratge de les dades
 
 - **Xifratge per defecte de Supabase**: tant la base de dades com

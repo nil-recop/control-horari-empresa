@@ -1235,10 +1235,21 @@ function App() {
       if (firstError) {
         console.error(firstError.error);
         const detail = firstError.error?.message || firstError.error?.hint || '';
-        setLoadError(
-          "No s'han pogut carregar les dades des de Supabase. Comprova que el projecte no estigui en pausa (Supabase Dashboard) i que la URL i la clau siguin correctes a l'inici del fitxer index.html."
-          + (detail ? ('\n\nDetall tècnic: ' + detail) : '')
-        );
+        let msg;
+        if (/schema cache/i.test(detail)) {
+          msg = "Supabase no troba les taules d'aquest projecte. Això vol dir una d'aquestes dues coses:\n\n"
+            + "1) El fitxer supabase/schema.sql encara no s'ha executat en AQUEST projecte concret (Dashboard → SQL Editor → Run).\n"
+            + "2) Ja s'ha executat, però cal refrescar la memòria cau de l'API: torna a obrir el SQL Editor i executa NOTIFY pgrst, 'reload schema'; i prova de nou al cap d'uns segons.\n\n"
+            + "Comprova també, a Project Settings → API, que la 'Project URL' coincideixi exactament amb la que hi ha a l'inici de index.html.";
+        } else if (/permission denied/i.test(detail)) {
+          msg = "Les taules existeixen, però falten permisos per a la clau pública. Executa això al SQL Editor de Supabase i torna-ho a provar:\n\n"
+            + "grant usage on schema public to anon, authenticated;\n"
+            + "grant select, insert, update, delete on all tables in schema public to anon, authenticated;\n"
+            + "grant usage, select on all sequences in schema public to anon, authenticated;";
+        } else {
+          msg = "No s'han pogut carregar les dades des de Supabase. Comprova que el projecte no estigui en pausa (Supabase Dashboard) i que la URL i la clau siguin correctes a l'inici del fitxer index.html.";
+        }
+        setLoadError(msg + (detail ? ('\n\nDetall tècnic: ' + detail) : ''));
       }
       const workersData = (w.data || []).map(workerFromRow).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
       setWorkers(workersData);
