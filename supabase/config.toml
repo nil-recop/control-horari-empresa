@@ -1,0 +1,31 @@
+# Configuració del projecte per a la CLI de Supabase
+# (https://supabase.com/docs/guides/cli).
+#
+# Només cal si en algun moment voleu gestionar la base de dades amb la CLI
+# (per exemple, `supabase link`, `supabase db push` o l'execució local amb
+# Docker). Per a l'ús actual de l'aplicació —tot fet des del Dashboard—
+# no és obligatori ni cal tocar-lo.
+
+project_id = "rtpsjbtvvnjigpuygrek"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+extra_search_path = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true

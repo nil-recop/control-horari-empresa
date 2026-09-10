@@ -78,6 +78,41 @@ const SUPABASE_URL = 'https://rtpsjbtvvnjigpuygrek.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_1VoCxRb15wE5fLnQS_tQBQ_kx1cGgKZ';
 ```
 
+## Carpeta `supabase/`
+
+```
+supabase/
+├── schema.sql               Tot en un sol fitxer: la manera ràpida que ja
+│                             heu fet servir (copiar i enganxar al SQL
+│                             Editor del Dashboard). No cal tornar-lo a
+│                             executar si ja teniu les taules creades.
+├── config.toml               Configuració per si en algun moment voleu
+│                             gestionar el projecte amb la CLI de Supabase.
+├── migrations/
+│   └── 20260101000000_initial_schema.sql
+│                             El mateix esquema (taules, seguretat RLS i
+│                             el bucket de justificants), però separat en
+│                             el format de "migració" que espera la CLI.
+├── seed.sql                  Només les dades de prova (obres i
+│                             treballadors d'exemple), per separat de
+│                             l'esquema.
+└── .gitignore                Perquè Git ignori fitxers temporals que crea
+                              la CLI en local.
+```
+
+**No cal que facis res més amb aquesta carpeta ara mateix** — el vostre
+projecte ja funciona amb el que vau executar amb `schema.sql`. Aquesta
+estructura (`config.toml` + `migrations/` + `seed.sql`) només es fa servir
+si en el futur voleu instal·lar la [CLI de
+Supabase](https://supabase.com/docs/guides/cli) (per exemple, per
+desenvolupar en local amb Docker, o per connectar el repositori de GitHub
+perquè apliqui els canvis de base de dades automàticament). En aquest cas:
+
+```bash
+supabase link --project-ref rtpsjbtvvnjigpuygrek
+supabase db push
+```
+
 ## Seguretat i xifratge de les dades
 
 - **Xifratge per defecte de Supabase**: tant la base de dades com
