@@ -9,7 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" crossorigin></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
   <!-- Supabase (base de dades + emmagatzematge de justificants) -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@latest/dist/umd/supabase.js"></script>
   <!-- Excel (importar/exportar treballadors i informes) -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <!-- Babel: permet escriure el component en JSX sense pas de compilació previ (Node/npm) -->
@@ -1234,7 +1234,11 @@ function App() {
       const firstError = [w, o, f, s, n, cc, a].find(r => r.error);
       if (firstError) {
         console.error(firstError.error);
-        setLoadError("No s'han pogut carregar les dades. Revisa la connexió amb Supabase (URL i clau a les variables d'entorn) i que hagis executat el fitxer supabase/schema.sql.");
+        const detail = firstError.error?.message || firstError.error?.hint || '';
+        setLoadError(
+          "No s'han pogut carregar les dades des de Supabase. Comprova que el projecte no estigui en pausa (Supabase Dashboard) i que la URL i la clau siguin correctes a l'inici del fitxer index.html."
+          + (detail ? ('\n\nDetall tècnic: ' + detail) : '')
+        );
       }
       const workersData = (w.data || []).map(workerFromRow).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
       setWorkers(workersData);
@@ -1363,7 +1367,7 @@ function App() {
     return (<div className="recop-app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}><GlobalStyles /><div style={{ color: '#8a8478' }}>Carregant…</div></div>);
   }
   if (loadError) {
-    return (<div className="recop-app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 24, textAlign: 'center' }}><GlobalStyles /><div style={{ color: BRAND.terracotta, fontWeight: 700, maxWidth: 420 }}>{loadError}</div></div>);
+    return (<div className="recop-app" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 24, textAlign: 'center' }}><GlobalStyles /><div style={{ color: BRAND.terracotta, fontWeight: 700, maxWidth: 480, whiteSpace: 'pre-wrap' }}>{loadError}</div></div>);
   }
   if (!user) {
     return (<><GlobalStyles /><LoginScreen workers={workers} onLogin={handleLogin} /></>);
