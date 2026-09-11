@@ -113,6 +113,23 @@ supabase link --project-ref rtpsjbtvvnjigpuygrek
 supabase db push
 ```
 
+## Actualització necessària a la base de dades (fitxatges a diverses obres + notificacions que naveguen)
+
+Aquesta versió permet marcar hores a diverses obres el mateix dia i fa que
+clicar una notificació et porti directament a l'apartat corresponent. Com
+que ja teniu taules creades, **cal executar això una sola vegada** al SQL
+Editor de Supabase perquè funcioni:
+
+```sql
+alter table notificacions add column if not exists target text;
+
+alter table fitxatges drop constraint if exists fitxatges_worker_id_date_key;
+alter table fitxatges add constraint fitxatges_worker_id_date_obra_id_key unique (worker_id, date, obra_id);
+```
+
+Si mai torneu a crear el projecte des de zero amb `schema.sql` (o amb
+`supabase/migrations/`), aquest pas ja hi és inclòs i no cal fer-lo a mà.
+
 ## Resolució de problemes
 
 **"Could not find the table 'public.workers' in the schema cache"**

@@ -40,7 +40,9 @@ create table if not exists fitxatges (
   file_name text,
   file_path text,
   created_at timestamptz not null default now(),
-  unique (worker_id, date)
+  -- Una fila per treballador+data+obra: permet marcar hores a diverses
+  -- obres el mateix dia (una fila per obra).
+  unique (worker_id, date, obra_id)
 );
 
 create table if not exists solicituds (
@@ -61,6 +63,7 @@ create table if not exists notificacions (
   worker_id uuid not null references workers(id) on delete cascade,
   message text not null,
   read boolean not null default false,
+  target text,
   created_at timestamptz not null default now()
 );
 

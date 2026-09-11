@@ -117,7 +117,18 @@ const defaultTabForRole = (role) => ({ treballador: 'fitxatge', encarregat: 'fit
 
 /* ============================= Helpers ============================= */
 const uid = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// IMPORTANT: fem servir sempre la data LOCAL (any/mes/dia del dispositiu),
+// mai .toISOString() per a dates soles — .toISOString() converteix a UTC,
+// i a zones horàries per davant de UTC (com Catalunya) això desplaçava la
+// data un dia enrere i feia que "avui" i les fletxes de dia anterior/
+// posterior no funcionessin correctament.
+const toLocalISODate = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+const todayISO = () => toLocalISODate(new Date());
 const fmtDate = (s) => {
   if (!s) return '';
   const d = new Date(s + 'T00:00:00');
@@ -130,7 +141,7 @@ function getWeekRange(dateStr) {
   const day = (d.getDay() + 6) % 7;
   const monday = new Date(d); monday.setDate(d.getDate() - day);
   const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
-  return [monday.toISOString().slice(0, 10), sunday.toISOString().slice(0, 10)];
+  return [toLocalISODate(monday), toLocalISODate(sunday)];
 }
 function getMonthRange(ym) {
   const [y, m] = ym.split('-').map(Number);
@@ -164,7 +175,7 @@ const fitxatgeToRow = (f) => ({ worker_id: f.workerId, date: f.date, baixa: f.ba
 const solicitudFromRow = (r) => ({ id: r.id, workerId: r.worker_id, type: r.type, dateFrom: r.date_from, dateTo: r.date_to, comment: r.comment || '', file: r.file_path ? { name: r.file_name, path: r.file_path } : null, status: r.status, createdAt: r.created_at });
 const solicitudToRow = (s) => ({ worker_id: s.workerId, type: s.type, date_from: s.dateFrom, date_to: s.dateTo, comment: s.comment || '', file_name: s.file?.name || null, file_path: s.file?.path || null, status: s.status });
 
-const notifFromRow = (r) => ({ id: r.id, workerId: r.worker_id, message: r.message, read: r.read, createdAt: new Date(r.created_at).toLocaleString('ca-ES') });
+const notifFromRow = (r) => ({ id: r.id, workerId: r.worker_id, message: r.message, read: r.read, target: r.target || null, createdAt: new Date(r.created_at).toLocaleString('ca-ES') });
 
 const ccFromRow = (r) => ({ id: r.id, date: r.date, obraId: r.obra_id, costCenterId: r.cost_center_id, workerIds: r.worker_ids || [] });
 const ccToRow = (a) => ({ date: a.date, obra_id: a.obraId, cost_center_id: a.costCenterId, worker_ids: a.workerIds || [] });
@@ -327,7 +338,7 @@ function LoginScreen({ workers, onLogin }) {
 }
 
 /* ============================= Header + Nav ============================= */
-function Header({ user, notifs, onLogout, onMarkRead }) {
+function Header({ user, notifs, onLogout, onNotifClick }) {
   const [open, setOpen] = useState(false);
   const unread = notifs.filter(n => !n.read).length;
   return (
@@ -351,7 +362,7 @@ function Header({ user, notifs, onLogout, onMarkRead }) {
             <div style={{ padding: '10px 14px', borderBottom: '1px solid #eee', fontWeight: 700, fontSize: 13 }}>Notificacions</div>
             {notifs.length === 0 && <div style={{ padding: 16, fontSize: 13, color: '#8a8478' }}>Cap notificació.</div>}
             {notifs.slice().reverse().map(n => (
-              <div key={n.id} onClick={() => onMarkRead(n.id)} style={{ padding: '10px 14px', borderBottom: '1px solid #f1ede4', background: n.read ? '#fff' : '#faf3ee', cursor: 'pointer' }}>
+              <div key={n.id} onClick={() => { onNotifClick(n); setOpen(false); }} style={{ padding: '10px 14px', borderBottom: '1px solid #f1ede4', background: n.read ? '#fff' : '#faf3ee', cursor: 'pointer' }}>
                 <div style={{ fontSize: 13 }}>{n.message}</div>
                 <div style={{ fontSize: 11, color: '#8a8478', marginTop: 2 }}>{n.createdAt}</div>
               </div>
@@ -440,38 +451,40 @@ function AttachmentViewer({ file }) {
 }
 
 /* ============================= Fitxatge (treballador + encarregat) ============================= */
-function FitxatgeView({ user, obres, fitxatges, onSave }) {
+function FitxatgeView({ user, obres, fitxatges, onSave, onDelete }) {
   const [date, setDate] = useState(todayISO());
   const myObres = obres.filter(o => user.obraIds.includes(o.id));
 
-  const load = (d) => fitxatges.find(f => f.workerId === user.id && f.date === d);
-  const e0 = load(date);
-  const [obraId, setObraId] = useState(e0?.obraId || myObres[0]?.id || '');
-  const [hores, setHores] = useState(e0?.hours ?? 8);
-  const [dieta, setDieta] = useState(e0?.dieta ?? false);
-  const [desplacament, setDesplacament] = useState(e0?.desplacament ?? false);
-  const [comment, setComment] = useState(e0?.comment ?? '');
-  const [baixa, setBaixa] = useState(e0?.baixa ?? false);
-  const [file, setFile] = useState(e0?.file ?? null);
-  const [saved, setSaved] = useState(false);
+  const dayFitxatges = fitxatges.filter(f => f.workerId === user.id && f.date === date);
+  const baixaEntry = dayFitxatges.find(f => f.baixa);
+  const workEntries = dayFitxatges.filter(f => !f.baixa);
+  const totalHores = workEntries.reduce((s, f) => s + (Number(f.hours) || 0), 0);
+
+  const [baixa, setBaixa] = useState(!!baixaEntry);
+  const [baixaFile, setBaixaFile] = useState(baixaEntry?.file ?? null);
   const [showBaixaAlert, setShowBaixaAlert] = useState(false);
+  const [savedBaixa, setSavedBaixa] = useState(false);
+
+  const [showEntryForm, setShowEntryForm] = useState(false);
+  const [editingEntryId, setEditingEntryId] = useState(null);
+  const [formObraId, setFormObraId] = useState('');
+  const [formHores, setFormHores] = useState(8);
+  const [formDieta, setFormDieta] = useState(false);
+  const [formDesplacament, setFormDesplacament] = useState(false);
+  const [formComment, setFormComment] = useState('');
 
   useEffect(() => {
-    const e = load(date);
-    setObraId(e?.obraId || myObres[0]?.id || '');
-    setHores(e?.hours ?? 8);
-    setDieta(e?.dieta ?? false);
-    setDesplacament(e?.desplacament ?? false);
-    setComment(e?.comment ?? '');
-    setBaixa(e?.baixa ?? false);
-    setFile(e?.file ?? null);
-    setSaved(false);
+    const dayF = fitxatges.filter(f => f.workerId === user.id && f.date === date);
+    const be = dayF.find(f => f.baixa);
+    setBaixa(!!be);
+    setBaixaFile(be?.file ?? null);
+    setShowEntryForm(false);
+    setEditingEntryId(null);
+    setSavedBaixa(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
-  const moveDate = (delta) => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + delta); setDate(d.toISOString().slice(0, 10)); };
-  const canSave = baixa ? true : !!obraId;
-  const existing = load(date);
+  const moveDate = (delta) => { const d = new Date(date + 'T00:00:00'); d.setDate(d.getDate() + delta); setDate(toLocalISODate(d)); };
 
   const toggleBaixa = () => {
     const nv = !baixa;
@@ -480,25 +493,66 @@ function FitxatgeView({ user, obres, fitxatges, onSave }) {
       setShowBaixaAlert(true);
       setTimeout(() => setShowBaixaAlert(false), 4500);
     } else {
-      setFile(null);
+      setBaixaFile(null);
     }
   };
 
-  const save = () => {
+  const saveBaixa = () => {
     onSave({
-      id: existing?.id,
+      id: baixaEntry?.id,
       workerId: user.id,
       date,
-      baixa,
-      obraId: baixa ? null : obraId,
-      hours: baixa ? 0 : Number(hores) || 0,
-      dieta: baixa ? false : dieta,
-      desplacament: baixa ? false : desplacament,
-      comment: baixa ? '' : comment,
-      file: file || null,
+      baixa: true,
+      obraId: null,
+      hours: 0,
+      dieta: false,
+      desplacament: false,
+      comment: '',
+      file: baixaFile || null,
     });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
+    setSavedBaixa(true);
+    setTimeout(() => setSavedBaixa(false), 1800);
+  };
+
+  const allObresUsed = myObres.length > 0 && workEntries.length >= myObres.length;
+
+  const startAddEntry = () => {
+    const usedObraIds = workEntries.map(f => f.obraId);
+    const nextObra = myObres.find(o => !usedObraIds.includes(o.id));
+    setEditingEntryId(null);
+    setFormObraId(nextObra?.id || '');
+    setFormHores(8);
+    setFormDieta(false);
+    setFormDesplacament(false);
+    setFormComment('');
+    setShowEntryForm(true);
+  };
+  const startEditEntry = (entry) => {
+    setEditingEntryId(entry.id);
+    setFormObraId(entry.obraId || '');
+    setFormHores(entry.hours ?? 8);
+    setFormDieta(!!entry.dieta);
+    setFormDesplacament(!!entry.desplacament);
+    setFormComment(entry.comment || '');
+    setShowEntryForm(true);
+  };
+
+  const saveEntry = () => {
+    if (!formObraId) return;
+    onSave({
+      id: editingEntryId || undefined,
+      workerId: user.id,
+      date,
+      baixa: false,
+      obraId: formObraId,
+      hours: Number(formHores) || 0,
+      dieta: formDieta,
+      desplacament: formDesplacament,
+      comment: formComment,
+      file: null,
+    });
+    setShowEntryForm(false);
+    setEditingEntryId(null);
   };
 
   return (
@@ -534,49 +588,104 @@ function FitxatgeView({ user, obres, fitxatges, onSave }) {
           </button>
         </div>
 
-        {baixa ? (
+        {baixa && (
           <div>
             <span className="label">Justificant mèdic (opcional)</span>
-            <FileAttach file={file} onChange={setFile} required={false} folder={`baixes/${user.id}`} />
-            {!file && (
+            <FileAttach file={baixaFile} onChange={setBaixaFile} required={false} folder={`baixes/${user.id}`} />
+            {!baixaFile && (
               <div style={{ fontSize: 11, color: '#8a8478', marginTop: 6, display: 'flex', gap: 4 }}>
                 <AlertCircle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>Recorda adjuntar el justificant mèdic com més aviat millor.</span>
               </div>
             )}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div>
-              <span className="label">Obra</span>
-              <select className="select" value={obraId} onChange={e => setObraId(e.target.value)}>
-                <option value="">Selecciona una obra…</option>
-                {myObres.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <span className="label">Hores treballades</span>
-              <input type="number" min="0" max="24" step="0.5" className="input" value={hores} onChange={e => setHores(e.target.value)} />
-            </div>
-            <div style={{ display: 'flex', gap: 20 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
-                <input type="checkbox" checked={dieta} onChange={e => setDieta(e.target.checked)} /> Dieta
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
-                <input type="checkbox" checked={desplacament} onChange={e => setDesplacament(e.target.checked)} /> Desplaçament
-              </label>
-            </div>
-            <div>
-              <span className="label">Comentari del treball executat</span>
-              <textarea className="textarea" rows={3} value={comment} onChange={e => setComment(e.target.value)} placeholder="Breu descripció de la feina feta avui…" />
-            </div>
+            <button className="btn btn-primary" style={{ width: '100%', marginTop: 16 }} onClick={saveBaixa}>
+              <Check size={16} /> {savedBaixa ? 'Desat!' : 'Desa la baixa'}
+            </button>
           </div>
         )}
-
-        <button className="btn btn-primary" style={{ width: '100%', marginTop: 16 }} disabled={!canSave} onClick={save}>
-          <Check size={16} /> {saved ? 'Desat!' : 'Desa el fitxatge'}
-        </button>
       </div>
+
+      {!baixa && (
+        <>
+          {totalHores > 12 && (
+            <div className="card" style={{ borderColor: BRAND.terracotta, background: '#fbe4e1', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <AlertCircle size={18} color={BRAND.terracotta} style={{ flexShrink: 0, marginTop: 1 }} />
+              <div style={{ fontSize: 13, color: BRAND.terracotta, fontWeight: 600 }}>
+                Has marcat {totalHores} hores avui, per sobre de les 12 hores diàries. Revisa-ho si no és correcte.
+              </div>
+            </div>
+          )}
+
+          <div className="card">
+            <div style={{ fontWeight: 800, marginBottom: 10 }}>Hores d'avui{workEntries.length > 0 ? ` · ${totalHores} h` : ''}</div>
+
+            {workEntries.length === 0 && <div style={{ fontSize: 13, color: '#8a8478', marginBottom: 10 }}>Encara no has marcat cap obra aquest dia.</div>}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+              {workEntries.map(f => {
+                const obra = obres.find(o => o.id === f.obraId);
+                return (
+                  <div key={f.id} style={{ border: '1px solid #e7e2d8', borderRadius: 10, padding: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{obra?.name || 'Obra'}</div>
+                        <div style={{ fontSize: 12, color: '#8a8478' }}>{f.hours} h{f.dieta ? ' · Dieta' : ''}{f.desplacament ? ' · Desplaçament' : ''}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-ghost" style={{ padding: '4px 8px' }} onClick={() => startEditEntry(f)}><Pencil size={14} /></button>
+                        <button className="btn btn-danger" style={{ padding: '4px 8px' }} onClick={() => onDelete(f.id)}><X size={14} /></button>
+                      </div>
+                    </div>
+                    {f.comment && <div style={{ fontSize: 13, marginTop: 6 }}>{f.comment}</div>}
+                  </div>
+                );
+              })}
+            </div>
+
+            {!showEntryForm ? (
+              allObresUsed ? (
+                <div style={{ fontSize: 12, color: '#8a8478', textAlign: 'center' }}>Ja has registrat hores a totes les teves obres assignades avui.</div>
+              ) : (
+                <button className="btn btn-primary" style={{ width: '100%' }} onClick={startAddEntry} disabled={myObres.length === 0}>
+                  <Plus size={16} /> {workEntries.length === 0 ? 'Afegeix hores' : "Afegeix hores a una altra obra"}
+                </button>
+              )
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, borderTop: '1px solid #eee9de', paddingTop: 14 }}>
+                <div>
+                  <span className="label">Obra</span>
+                  <select className="select" value={formObraId} onChange={e => setFormObraId(e.target.value)}>
+                    <option value="">Selecciona una obra…</option>
+                    {myObres.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <span className="label">Hores treballades</span>
+                  <input type="number" min="0" max="24" step="0.5" className="input" value={formHores} onChange={e => setFormHores(e.target.value)} />
+                </div>
+                <div style={{ display: 'flex', gap: 20 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
+                    <input type="checkbox" checked={formDieta} onChange={e => setFormDieta(e.target.checked)} /> Dieta
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
+                    <input type="checkbox" checked={formDesplacament} onChange={e => setFormDesplacament(e.target.checked)} /> Desplaçament
+                  </label>
+                </div>
+                <div>
+                  <span className="label">Comentari del treball executat</span>
+                  <textarea className="textarea" rows={3} value={formComment} onChange={e => setFormComment(e.target.value)} placeholder="Breu descripció de la feina feta avui…" />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { setShowEntryForm(false); setEditingEntryId(null); }}>Cancel·la</button>
+                  <button className="btn btn-primary" style={{ flex: 1 }} disabled={!formObraId} onClick={saveEntry}>
+                    <Check size={16} /> {editingEntryId ? 'Desa els canvis' : 'Afegeix'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -622,8 +731,9 @@ function HistorialView({ user, obres, fitxatges }) {
 }
 
 /* ============================= Sol·licituds (treballador) ============================= */
-function SolicitudsView({ user, solicituds, onCreate }) {
+function SolicitudsView({ user, solicituds, onCreate, onUpdate }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [type, setType] = useState('vacances');
   const [dateFrom, setDateFrom] = useState(todayISO());
   const [dateTo, setDateTo] = useState(todayISO());
@@ -635,19 +745,32 @@ function SolicitudsView({ user, solicituds, onCreate }) {
     : st === 'rebutjada' ? <span className="badge badge-danger">Rebutjada</span>
     : <span className="badge badge-warning">Pendent</span>;
 
+  const startNew = () => {
+    setEditingId(null);
+    setType('vacances'); setDateFrom(todayISO()); setDateTo(todayISO()); setComment(''); setFile(null);
+    setShowForm(true);
+  };
+  const startEdit = (s) => {
+    setEditingId(s.id);
+    setType(s.type); setDateFrom(s.dateFrom); setDateTo(s.dateTo); setComment(s.comment || ''); setFile(s.file || null);
+    setShowForm(true);
+  };
+
   const submit = () => {
     if (!dateFrom || !dateTo) return;
-    onCreate({ workerId: user.id, type, dateFrom, dateTo, comment, file: type === 'permis' ? file : null, status: 'pendent' });
-    setShowForm(false); setComment(''); setFile(null); setDateFrom(todayISO()); setDateTo(todayISO());
+    const payload = { workerId: user.id, type, dateFrom, dateTo, comment, file: type === 'permis' ? file : null, status: 'pendent' };
+    if (editingId) onUpdate(editingId, payload);
+    else onCreate(payload);
+    setShowForm(false); setEditingId(null); setComment(''); setFile(null); setDateFrom(todayISO()); setDateTo(todayISO());
   };
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
       {!showForm ? (
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}><Plus size={16} /> Nova sol·licitud</button>
+        <button className="btn btn-primary" onClick={startNew}><Plus size={16} /> Nova sol·licitud</button>
       ) : (
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontWeight: 800 }}>Nova sol·licitud</div>
+          <div style={{ fontWeight: 800 }}>{editingId ? 'Edita la sol·licitud' : 'Nova sol·licitud'}</div>
           <div className="segmented">
             <button className={type === 'vacances' ? 'active' : ''} onClick={() => setType('vacances')}>Vacances</button>
             <button className={type === 'permis' ? 'active' : ''} onClick={() => setType('permis')}>Permís</button>
@@ -677,8 +800,8 @@ function SolicitudsView({ user, solicituds, onCreate }) {
             </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setShowForm(false)}>Cancel·la</button>
-            <button className="btn btn-primary" style={{ flex: 1 }} disabled={dateFrom > dateTo} onClick={submit}>Envia</button>
+            <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { setShowForm(false); setEditingId(null); }}>Cancel·la</button>
+            <button className="btn btn-primary" style={{ flex: 1 }} disabled={dateFrom > dateTo} onClick={submit}>{editingId ? 'Desa els canvis' : 'Envia'}</button>
           </div>
         </div>
       )}
@@ -695,7 +818,12 @@ function SolicitudsView({ user, solicituds, onCreate }) {
               {statusBadge(s.status)}
             </div>
             {s.comment && <div style={{ fontSize: 13, marginTop: 8 }}>{s.comment}</div>}
-            <div style={{ marginTop: 8 }}><AttachmentViewer file={s.file} /></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, flexWrap: 'wrap', gap: 8 }}>
+              <AttachmentViewer file={s.file} />
+              {s.status === 'pendent' && (
+                <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => startEdit(s)}><Pencil size={14} /> Edita</button>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -881,6 +1009,28 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
   const totalGeneral = rows.reduce((s, r) => s + r.total, 0);
   const cols = obraFilter === 'totes' ? 7 : 6;
 
+  // Segona taula: hores dedicades a cada centre de cost. S'obtenen creuant
+  // les assignacions de centre de cost del dia amb el fitxatge (hores) de
+  // cada treballador assignat, per a la mateixa obra i data.
+  const byCC = {};
+  relevantCC.forEach(a => {
+    const o = obres.find(x => x.id === a.obraId);
+    const cc = o?.costCenters.find(c => c.id === a.costCenterId);
+    if (!cc) return;
+    const key = obraFilter === 'totes' ? `${a.obraId}|${a.costCenterId}` : a.costCenterId;
+    if (!byCC[key]) byCC[key] = { name: cc.name, obraName: o?.name || '', hours: 0, workerIds: new Set() };
+    a.workerIds.forEach(wid => {
+      const fit = fitxatges.find(f => f.workerId === wid && f.date === a.date && f.obraId === a.obraId && !f.baixa);
+      if (fit) {
+        byCC[key].hours += Number(fit.hours) || 0;
+        byCC[key].workerIds.add(wid);
+      }
+    });
+  });
+  const ccRows = Object.values(byCC).map(r => ({ ...r, workerCount: r.workerIds.size }));
+  const ccTotalHours = ccRows.reduce((s, r) => s + r.hours, 0);
+  const ccCols = obraFilter === 'totes' ? 4 : 3;
+
   const exportExcel = () => {
     const fitxData = relevantFitxatges.map(f => {
       const w = workers.find(x => x.id === f.workerId); const o = obres.find(x => x.id === f.obraId);
@@ -895,13 +1045,16 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
       const o = obres.find(x => x.id === a.obraId); const cc = o?.costCenters.find(c => c.id === a.costCenterId);
       a.workerIds.forEach(wid => {
         const w = workers.find(x => x.id === wid);
-        ccData.push({ Data: a.date, Obra: o?.name || '', 'Centre de cost': cc?.name || '', Treballador: w?.name || '' });
+        const fit = fitxatges.find(f => f.workerId === wid && f.date === a.date && f.obraId === a.obraId && !f.baixa);
+        ccData.push({ Data: a.date, Obra: o?.name || '', 'Centre de cost': cc?.name || '', Treballador: w?.name || '', Hores: fit?.hours || 0 });
       });
     });
     const resumData = rows.map(r => ({ Treballador: r.name, Obres: r.obraNames, Hores: r.hours, "Mà d'obra (€)": r.laborCost, 'Dietes (€)': r.dietaCost, 'Desplaçaments (€)': r.despCost, 'Total (€)': r.total }));
+    const ccResumData = ccRows.map(r => ({ 'Centre de cost': r.name, Obra: r.obraName, Hores: r.hours, Treballadors: r.workerCount }));
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumData), 'Resum');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ccResumData), 'Hores per centre de cost');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fitxData), 'Fitxatges');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(assistData), 'Assistencia');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ccData), 'Centres de cost');
@@ -946,10 +1099,26 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
         </table>
       </div>
 
+      <div className="card" style={{ overflowX: 'auto' }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>Hores per centre de cost</div>
+        <table className="recop-table">
+          <thead><tr><th>Centre de cost</th>{obraFilter === 'totes' && <th>Obra</th>}<th>Hores</th><th>Treballadors</th></tr></thead>
+          <tbody>
+            {ccRows.map((r, i) => (
+              <tr key={i}><td>{r.name}</td>{obraFilter === 'totes' && <td>{r.obraName}</td>}<td>{r.hours}</td><td>{r.workerCount}</td></tr>
+            ))}
+            {ccRows.length === 0 && <tr><td colSpan={ccCols} style={{ color: '#8a8478', textAlign: 'center', padding: 16 }}>Sense assignacions de centre de cost per aquest període.</td></tr>}
+          </tbody>
+          {ccRows.length > 0 && (
+            <tfoot><tr className="total-row"><td>Total</td>{obraFilter === 'totes' && <td />}<td>{ccTotalHours}</td><td /></tr></tfoot>
+          )}
+        </table>
+      </div>
+
       <div className="card">
         <div style={{ fontWeight: 800, marginBottom: 10 }}>Exportar dades</div>
         <button className="btn btn-outline" onClick={exportExcel}><Download size={14} /> Exporta a Excel (.xlsx)</button>
-        <div style={{ fontSize: 12, color: '#8a8478', marginTop: 8 }}>Inclou pestanyes de Resum, Fitxatges, Assistència i Centres de cost pel període i obra seleccionats — llest per a taules dinàmiques.</div>
+        <div style={{ fontSize: 12, color: '#8a8478', marginTop: 8 }}>Inclou pestanyes de Resum, Hores per centre de cost, Fitxatges, Assistència i Centres de cost pel període i obra seleccionats — llest per a taules dinàmiques.</div>
       </div>
     </div>
   );
@@ -962,6 +1131,7 @@ function ObresView({ obres, onSave }) {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState(blank);
   const [newCC, setNewCC] = useState('');
+  const [filter, setFilter] = useState('totes');
 
   const startEdit = (o) => { setForm({ ...o, costCenters: [...o.costCenters] }); setEditingId(o.id); setShowNew(false); };
   const startNew = () => { setForm({ ...blank, id: uid() }); setShowNew(true); setEditingId(null); };
@@ -969,9 +1139,20 @@ function ObresView({ obres, onSave }) {
   const removeCC = (id) => setForm(f => ({ ...f, costCenters: f.costCenters.filter(c => c.id !== id) }));
   const save = () => { if (!form.name.trim()) return; onSave(form); setEditingId(null); setShowNew(false); setForm(blank); };
 
+  const visibleObres = obres
+    .filter(o => filter === 'totes' || (filter === 'actives' ? o.active : !o.active))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ca'));
+
   return (
     <div className="content-inner" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }} onClick={startNew}><Plus size={16} /> Nova obra</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <button className="btn btn-primary" onClick={startNew}><Plus size={16} /> Nova obra</button>
+        <div className="segmented">
+          <button className={filter === 'totes' ? 'active' : ''} onClick={() => setFilter('totes')}>Totes</button>
+          <button className={filter === 'actives' ? 'active' : ''} onClick={() => setFilter('actives')}>Actives</button>
+          <button className={filter === 'inactives' ? 'active' : ''} onClick={() => setFilter('inactives')}>Inactives</button>
+        </div>
+      </div>
 
       {(showNew || editingId) && (
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 480 }}>
@@ -999,7 +1180,7 @@ function ObresView({ obres, onSave }) {
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 12 }}>
-        {obres.map(o => (
+        {visibleObres.map(o => (
           <div key={o.id} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
               <div>
@@ -1014,6 +1195,7 @@ function ObresView({ obres, onSave }) {
             <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => startEdit(o)}><Pencil size={14} /> Edita</button>
           </div>
         ))}
+        {visibleObres.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>Cap obra amb aquest filtre.</div>}
       </div>
     </div>
   );
@@ -1026,6 +1208,11 @@ function PersonalView({ workers, obres, onSave, onImport }) {
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState(blank);
   const [importMsg, setImportMsg] = useState('');
+  const [obraFilter, setObraFilter] = useState('totes');
+
+  const visibleWorkers = workers
+    .filter(w => obraFilter === 'totes' || w.obraIds.includes(obraFilter))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ca'));
 
   const startEdit = (w) => { setForm({ ...w, obraIds: [...w.obraIds] }); setEditingId(w.id); setShowNew(false); };
   const startNew = () => { setForm({ ...blank, id: uid() }); setShowNew(true); setEditingId(null); };
@@ -1129,8 +1316,16 @@ function PersonalView({ workers, obres, onSave, onImport }) {
         </div>
       )}
 
+      <div>
+        <span className="label">Filtra per obra assignada</span>
+        <select className="select" style={{ maxWidth: 320 }} value={obraFilter} onChange={e => setObraFilter(e.target.value)}>
+          <option value="totes">Totes les obres</option>
+          {obres.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 12 }}>
-        {workers.map(w => (
+        {visibleWorkers.map(w => (
           <div key={w.id} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ fontWeight: 800 }}>{w.name}</div>
@@ -1143,6 +1338,7 @@ function PersonalView({ workers, obres, onSave, onImport }) {
             <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => startEdit(w)}><Pencil size={14} /> Edita</button>
           </div>
         ))}
+        {visibleWorkers.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>Cap treballador amb aquest filtre.</div>}
       </div>
     </div>
   );
@@ -1270,26 +1466,38 @@ function App() {
     })();
   }, []);
 
-  const notify = async (workerId, message) => {
-    const { data, error } = await supabaseClient.from('notificacions').insert({ worker_id: workerId, message }).select().single();
+  const notify = async (workerId, message, target = null) => {
+    const { data, error } = await supabaseClient.from('notificacions').insert({ worker_id: workerId, message, target }).select().single();
     if (error) { console.error(error); return; }
     setNotificacions(prev => [...prev, notifFromRow(data)]);
   };
-  const notifyRole = async (role, message) => {
+  const notifyRole = async (role, message, target = null) => {
     const targets = workers.filter(w => w.role === role);
     if (targets.length === 0) return;
-    const rows = targets.map(w => ({ worker_id: w.id, message }));
+    const rows = targets.map(w => ({ worker_id: w.id, message, target }));
     const { data, error } = await supabaseClient.from('notificacions').insert(rows).select();
     if (error) { console.error(error); return; }
     setNotificacions(prev => [...prev, ...data.map(notifFromRow)]);
   };
 
+  // Nota: fem servir insert/update explícits (no upsert) perquè ara un
+  // treballador pot tenir diverses files de fitxatge el mateix dia (una per
+  // obra), així que cal que sigui la pròpia interfície qui digui si està
+  // creant una entrada nova o editant-ne una que ja existeix (per id).
   const handleFitxatgeSave = async (entry) => {
     const row = fitxatgeToRow(entry);
-    const { data, error } = await supabaseClient.from('fitxatges').upsert(row, { onConflict: 'worker_id,date' }).select().single();
+    const { data, error } = entry.id
+      ? await supabaseClient.from('fitxatges').update(row).eq('id', entry.id).select().single()
+      : await supabaseClient.from('fitxatges').insert(row).select().single();
     if (error) { console.error(error); return; }
     const saved = fitxatgeFromRow(data);
-    setFitxatges(prev => [...prev.filter(f => !(f.workerId === saved.workerId && f.date === saved.date)), saved]);
+    setFitxatges(prev => [...prev.filter(f => f.id !== saved.id), saved]);
+  };
+
+  const handleFitxatgeDelete = async (id) => {
+    const { error } = await supabaseClient.from('fitxatges').delete().eq('id', id);
+    if (error) { console.error(error); return; }
+    setFitxatges(prev => prev.filter(f => f.id !== id));
   };
 
   const handleSolicitudCreate = async (s) => {
@@ -1297,7 +1505,15 @@ function App() {
     const { data, error } = await supabaseClient.from('solicituds').insert(row).select().single();
     if (error) { console.error(error); return; }
     setSolicituds(prev => [...prev, solicitudFromRow(data)]);
-    notifyRole('cap_obra', `Nova sol·licitud de ${user?.name} (${s.type === 'vacances' ? 'vacances' : 'permís'})`);
+    notifyRole('cap_obra', `Nova sol·licitud de ${user?.name} (${s.type === 'vacances' ? 'vacances' : 'permís'})`, 'solicituds_admin');
+  };
+
+  const handleSolicitudUpdate = async (id, s) => {
+    const row = solicitudToRow(s);
+    const { data, error } = await supabaseClient.from('solicituds').update(row).eq('id', id).select().single();
+    if (error) { console.error(error); return; }
+    setSolicituds(prev => prev.map(x => x.id === id ? solicitudFromRow(data) : x));
+    notifyRole('cap_obra', `${user?.name} ha modificat una sol·licitud de ${s.type === 'vacances' ? 'vacances' : 'permís'}`, 'solicituds_admin');
   };
 
   const handleSolicitudDecision = async (id, status) => {
@@ -1305,7 +1521,7 @@ function App() {
     if (error) { console.error(error); return; }
     const updated = solicitudFromRow(data);
     setSolicituds(prev => prev.map(x => x.id === id ? updated : x));
-    notify(updated.workerId, `La teva sol·licitud de ${updated.type === 'vacances' ? 'vacances' : 'permís'} (${fmtDate(updated.dateFrom)} — ${fmtDate(updated.dateTo)}) ha estat ${status === 'aprovada' ? 'aprovada' : 'rebutjada'}.`);
+    notify(updated.workerId, `La teva sol·licitud de ${updated.type === 'vacances' ? 'vacances' : 'permís'} (${fmtDate(updated.dateFrom)} — ${fmtDate(updated.dateTo)}) ha estat ${status === 'aprovada' ? 'aprovada' : 'rebutjada'}.`, 'solicituds');
   };
 
   const handleAssignacioCC = async (entry) => {
@@ -1334,8 +1550,8 @@ function App() {
   };
 
   const handleRoleChange = (w, prevRole) => {
-    notify(w.id, `Se t'ha assignat el rol de ${ROLE_LABEL[w.role]}.`);
-    if (prevRole === 'encarregat' && w.role !== 'encarregat') notify(w.id, `Se t'han retirat les funcions d'Encarregat.`);
+    notify(w.id, `Se t'ha assignat el rol de ${ROLE_LABEL[w.role]}.`, 'fitxatge');
+    if (prevRole === 'encarregat' && w.role !== 'encarregat') notify(w.id, `Se t'han retirat les funcions d'Encarregat.`, 'fitxatge');
   };
 
   const handleWorkerSave = async (w) => {
@@ -1362,6 +1578,11 @@ function App() {
     const { error } = await supabaseClient.from('notificacions').update({ read: true }).eq('id', id);
     if (error) { console.error(error); return; }
     setNotificacions(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const handleNotifClick = (n) => {
+    if (!n.read) handleMarkNotifRead(n.id);
+    if (n.target) setTab(n.target);
   };
 
   const handleLogin = (w) => {
@@ -1407,15 +1628,15 @@ function App() {
 
   const renderContent = () => {
     if (user.role === 'treballador') {
-      if (tab === 'fitxatge') return <FitxatgeView user={user} obres={obres} fitxatges={fitxatges} onSave={handleFitxatgeSave} />;
+      if (tab === 'fitxatge') return <FitxatgeView user={user} obres={obres} fitxatges={fitxatges} onSave={handleFitxatgeSave} onDelete={handleFitxatgeDelete} />;
       if (tab === 'historial') return <HistorialView user={user} obres={obres} fitxatges={fitxatges} />;
-      if (tab === 'solicituds') return <SolicitudsView user={user} solicituds={solicituds} onCreate={handleSolicitudCreate} />;
+      if (tab === 'solicituds') return <SolicitudsView user={user} solicituds={solicituds} onCreate={handleSolicitudCreate} onUpdate={handleSolicitudUpdate} />;
     }
     if (user.role === 'encarregat') {
-      if (tab === 'fitxatge') return <FitxatgeView user={user} obres={obres} fitxatges={fitxatges} onSave={handleFitxatgeSave} />;
+      if (tab === 'fitxatge') return <FitxatgeView user={user} obres={obres} fitxatges={fitxatges} onSave={handleFitxatgeSave} onDelete={handleFitxatgeDelete} />;
       if (tab === 'centres') return <CostCenterView user={user} obres={obres} workers={workers} assignacionsCC={assignacionsCC} onSave={handleAssignacioCC} />;
       if (tab === 'assistencia') return <AssistenciaView user={user} obres={obres} workers={workers} fitxatges={fitxatges} solicituds={solicituds} assistencia={assistencia} onMark={handleMarkAssistencia} />;
-      if (tab === 'solicituds') return <SolicitudsView user={user} solicituds={solicituds} onCreate={handleSolicitudCreate} />;
+      if (tab === 'solicituds') return <SolicitudsView user={user} solicituds={solicituds} onCreate={handleSolicitudCreate} onUpdate={handleSolicitudUpdate} />;
     }
     if (user.role === 'cap_obra') {
       if (tab === 'resum') return <ResumView obres={obres} workers={workers} fitxatges={fitxatges} assistencia={assistencia} assignacionsCC={assignacionsCC} />;
@@ -1429,7 +1650,7 @@ function App() {
   return (
     <div className="recop-app">
       <GlobalStyles />
-      <Header user={user} notifs={myNotifs} onLogout={handleLogout} onMarkRead={handleMarkNotifRead} />
+      <Header user={user} notifs={myNotifs} onLogout={handleLogout} onNotifClick={handleNotifClick} />
       <div className="main-with-sidebar">
         <Nav items={navItems} active={tab} onChange={setTab} />
         <div className="content-area" style={{ padding: '20px 16px 90px' }}>
