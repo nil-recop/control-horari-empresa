@@ -130,6 +130,34 @@ alter table fitxatges add constraint fitxatges_worker_id_date_obra_id_key unique
 Si mai torneu a crear el projecte des de zero amb `schema.sql` (o amb
 `supabase/migrations/`), aquest pas ja hi és inclòs i no cal fer-lo a mà.
 
+## Actualització necessària a la base de dades (calendari de planificació)
+
+Aquesta versió afegeix una nova secció "Calendari" (cap d'obra) que
+necessita una taula nova. Executa això una sola vegada al SQL Editor:
+
+```sql
+create table if not exists planificacio (
+  id uuid primary key default gen_random_uuid(),
+  worker_id uuid not null references workers(id) on delete cascade,
+  date date not null,
+  obra_id uuid references obres(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (worker_id, date)
+);
+
+alter table planificacio enable row level security;
+create policy "anon full access" on planificacio for all using (true) with check (true);
+
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+grant usage, select on all sequences in schema public to anon, authenticated;
+
+-- Perquè les properes taules noves ja tinguin permisos sense haver de
+-- repetir aquest pas cada vegada.
+alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated;
+alter default privileges in schema public grant usage, select on sequences to anon, authenticated;
+```
+
 ## Resolució de problemes
 
 **"Could not find the table 'public.workers' in the schema cache"**

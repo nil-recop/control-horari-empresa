@@ -88,6 +88,18 @@ create table if not exists assistencia (
   unique (date, obra_id, worker_id)
 );
 
+-- Planificació: destinació prevista (obra) d'un treballador en un dia,
+-- feta servir pel calendari del cap d'obra (consulta de dies passats i
+-- assignació de dies futurs).
+create table if not exists planificacio (
+  id uuid primary key default gen_random_uuid(),
+  worker_id uuid not null references workers(id) on delete cascade,
+  date date not null,
+  obra_id uuid references obres(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (worker_id, date)
+);
+
 -- ============================= Row Level Security =============================
 -- IMPORTANT: Aquestes polítiques són OBERTES (qualsevol amb la clau "anon"/
 -- "publishable" pot llegir/escriure) perquè, de moment, l'aplicació encara
@@ -103,6 +115,7 @@ alter table solicituds enable row level security;
 alter table notificacions enable row level security;
 alter table assignacions_cc enable row level security;
 alter table assistencia enable row level security;
+alter table planificacio enable row level security;
 
 create policy "anon full access" on workers for all using (true) with check (true);
 create policy "anon full access" on obres for all using (true) with check (true);
@@ -111,6 +124,7 @@ create policy "anon full access" on solicituds for all using (true) with check (
 create policy "anon full access" on notificacions for all using (true) with check (true);
 create policy "anon full access" on assignacions_cc for all using (true) with check (true);
 create policy "anon full access" on assistencia for all using (true) with check (true);
+create policy "anon full access" on planificacio for all using (true) with check (true);
 
 -- Crear les taules per SQL directe (en lloc del Table Editor) no atorga
 -- permisos a "anon"/"authenticated" automàticament: cal fer-ho explícit,
@@ -119,6 +133,10 @@ create policy "anon full access" on assistencia for all using (true) with check 
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to anon, authenticated;
 grant usage, select on all sequences in schema public to anon, authenticated;
+-- Perquè les taules que es creïn MÉS ENDAVANT també tinguin permisos sense
+-- haver de tornar a fer aquest GRANT a mà cada vegada.
+alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated;
+alter default privileges in schema public grant usage, select on sequences to anon, authenticated;
 
 -- ============================= Emmagatzematge de justificants =============================
 -- Bucket PRIVAT (public = false): els justificants (inclosos els mèdics) no

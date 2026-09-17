@@ -160,6 +160,32 @@ function getDayStatus(workerId, date, fitxatges, solicituds, assistencia, obraId
   if (fit) return { label: 'Present (fitxat)', kind: 'present' };
   return { label: 'Sense marcar', kind: 'none' };
 }
+// Estat d'un treballador en un dia, sense fixar una obra concreta (fa
+// servir per als calendaris: historial i planificació).
+function getWorkerDayInfo(workerId, date, fitxatges, solicituds) {
+  const baixa = fitxatges.find(f => f.workerId === workerId && f.date === date && f.baixa);
+  if (baixa) return { kind: 'baixa', label: 'Baixa', entries: [] };
+  const sol = solicituds.find(s => s.workerId === workerId && s.status === 'aprovada' && date >= s.dateFrom && date <= s.dateTo);
+  if (sol) return { kind: 'permis', label: sol.type === 'vacances' ? 'Vacances' : 'Permís', entries: [] };
+  const entries = fitxatges.filter(f => f.workerId === workerId && f.date === date && !f.baixa);
+  if (entries.length > 0) return { kind: 'work', label: entries.length === 1 ? 'treballat' : `${entries.length} obres`, entries };
+  return { kind: 'none', label: '', entries: [] };
+}
+// Graella d'un mes (dilluns a diumenge), amb null als forats abans/després
+// del mes. S'usa als calendaris d'historial i planificació.
+function buildMonthGrid(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const firstDay = new Date(y, m - 1, 1);
+  const startOffset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(`${ym}-${String(d).padStart(2, '0')}`);
+  while (cells.length % 7 !== 0) cells.push(null);
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return weeks;
+}
 const ROLE_LABEL = { treballador: 'Treballador', encarregat: 'Encarregat', cap_obra: "Cap d'obra" };
 
 /* ============================= DB <-> app mappers ============================= */
@@ -182,6 +208,9 @@ const ccToRow = (a) => ({ date: a.date, obra_id: a.obraId, cost_center_id: a.cos
 
 const assistFromRow = (r) => ({ id: r.id, date: r.date, obraId: r.obra_id, workerId: r.worker_id, present: r.present, markedBy: r.marked_by });
 const assistToRow = (a) => ({ date: a.date, obra_id: a.obraId, worker_id: a.workerId, present: a.present, marked_by: a.markedBy || null });
+
+const planFromRow = (r) => ({ id: r.id, workerId: r.worker_id, date: r.date, obraId: r.obra_id });
+const planToRow = (p) => ({ worker_id: p.workerId, date: p.date, obra_id: p.obraId });
 
 /* ============================= Global styles ============================= */
 function GlobalStyles() {
@@ -692,40 +721,96 @@ function FitxatgeView({ user, obres, fitxatges, onSave, onDelete }) {
 
 /* ============================= Historial (treballador) ============================= */
 function HistorialView({ user, obres, fitxatges }) {
-  const mine = fitxatges.filter(f => f.workerId === user.id).sort((a, b) => b.date.localeCompare(a.date));
-  const totalHores = mine.reduce((s, f) => s + (f.baixa ? 0 : Number(f.hours) || 0), 0);
+  const [ym, setYm] = useState(todayISO().slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  const monthEntries = fitxatges.filter(f => f.workerId === user.id && f.date.slice(0, 7) === ym);
+  const byDate = {};
+  monthEntries.forEach(f => { (byDate[f.date] = byDate[f.date] || []).push(f); });
+  const totalHoresMes = monthEntries.reduce((s, f) => s + (f.baixa ? 0 : Number(f.hours) || 0), 0);
+  const weeks = buildMonthGrid(ym);
+
+  const moveMonth = (delta) => {
+    const [y, m] = ym.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setYm(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    setSelectedDate(null);
+  };
+
+  const dayEntries = selectedDate ? (byDate[selectedDate] || []) : [];
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontWeight: 800 }}>Historial de fitxatges</div>
-        <span className="badge badge-neutral">{totalHores} h totals</span>
+      <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveMonth(-1)}><ChevronLeft size={16} /></button>
+          <div style={{ fontWeight: 800, fontSize: 15, textTransform: 'capitalize' }}>
+            {new Date(ym + '-01T00:00:00').toLocaleDateString('ca-ES', { month: 'long', year: 'numeric' })}
+          </div>
+          <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveMonth(1)}><ChevronRight size={16} /></button>
+        </div>
+        <div style={{ fontSize: 12, color: '#8a8478', textAlign: 'center' }}>{totalHoresMes} h aquest mes</div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {mine.length === 0 && <div style={{ textAlign: 'center', color: '#8a8478', fontSize: 13, padding: 20 }}>Encara no hi ha cap fitxatge registrat.</div>}
-        {mine.map(f => {
-          const obra = obres.find(o => o.id === f.obraId);
-          return (
-            <div key={f.id} className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, textTransform: 'capitalize' }}>{fmtDate(f.date)}</div>
-                  <div style={{ fontSize: 12, color: '#8a8478' }}>{f.baixa ? 'Baixa mèdica' : (obra?.name || '—')}</div>
-                </div>
-                {f.baixa ? <span className="badge badge-danger">Baixa</span> : <span className="badge badge-olive">{f.hours} h</span>}
-              </div>
-              {!f.baixa && (f.dieta || f.desplacament) && (
-                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                  {f.dieta && <span className="chip">Dieta</span>}
-                  {f.desplacament && <span className="chip">Desplaçament</span>}
-                </div>
-              )}
-              {!f.baixa && f.comment && <div style={{ fontSize: 13, marginTop: 8 }}>{f.comment}</div>}
-              {f.file && <div style={{ marginTop: 8 }}><AttachmentViewer file={f.file} /></div>}
+
+      <div className="card">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, fontSize: 11, fontWeight: 700, color: '#8a8478', textAlign: 'center', marginBottom: 6 }}>
+          {['Dl', 'Dt', 'Dc', 'Dj', 'Dv', 'Ds', 'Dg'].map(d => <div key={d}>{d}</div>)}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {weeks.map((week, wi) => (
+            <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4 }}>
+              {week.map((date, di) => {
+                if (!date) return <div key={di} />;
+                const entries = byDate[date] || [];
+                const baixaDay = entries.find(f => f.baixa);
+                const hours = entries.reduce((s, f) => s + (f.baixa ? 0 : Number(f.hours) || 0), 0);
+                const isToday = date === todayISO();
+                const isSelected = date === selectedDate;
+                let bg = '#fff', color = BRAND.black;
+                if (baixaDay) { bg = '#fbe4e1'; color = BRAND.terracotta; }
+                else if (hours > 0) { bg = '#e9f0d9'; color = BRAND.olive; }
+                return (
+                  <button key={di} onClick={() => setSelectedDate(isSelected ? null : date)} style={{
+                    background: bg, border: `1.5px solid ${isSelected ? BRAND.terracotta : '#e7e2d8'}`, borderRadius: 8, padding: '6px 2px',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer',
+                    boxShadow: isToday ? `inset 0 0 0 2px ${BRAND.black}` : 'none',
+                  }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color }}>{Number(date.slice(8, 10))}</span>
+                    {baixaDay && <span style={{ fontSize: 9, fontWeight: 700, color }}>Baixa</span>}
+                    {!baixaDay && hours > 0 && <span style={{ fontSize: 9, fontWeight: 700, color }}>{hours}h</span>}
+                  </button>
+                );
+              })}
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
+
+      {selectedDate && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, textTransform: 'capitalize' }}>{fmtDate(selectedDate)}</div>
+          {dayEntries.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>Sense fitxatges aquest dia.</div>}
+          {dayEntries.map(f => {
+            const obra = obres.find(o => o.id === f.obraId);
+            return (
+              <div key={f.id} className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{f.baixa ? 'Baixa mèdica' : (obra?.name || '—')}</div>
+                  {f.baixa ? <span className="badge badge-danger">Baixa</span> : <span className="badge badge-olive">{f.hours} h</span>}
+                </div>
+                {!f.baixa && (f.dieta || f.desplacament) && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    {f.dieta && <span className="chip">Dieta</span>}
+                    {f.desplacament && <span className="chip">Desplaçament</span>}
+                  </div>
+                )}
+                {!f.baixa && f.comment && <div style={{ fontSize: 13, marginTop: 8 }}>{f.comment}</div>}
+                {f.file && <div style={{ marginTop: 8 }}><AttachmentViewer file={f.file} /></div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -915,13 +1000,58 @@ function CostCenterView({ user, obres, workers, assignacionsCC, onSave }) {
 }
 
 /* ============================= Assistència (encarregat) ============================= */
-function AssistenciaView({ user, obres, workers, fitxatges, solicituds, assistencia, onMark }) {
+function AssistenciaRow({ worker, date, obraId, fitxatges, solicituds, assistencia, onMark, onSaveHores }) {
+  const st = getDayStatus(worker.id, date, fitxatges, solicituds, assistencia, obraId);
+  const locked = st.kind === 'baixa' || st.kind === 'permis';
+  const badgeClass = (kind) => kind === 'baixa' ? 'badge-danger' : kind === 'permis' ? 'badge-warning' : kind === 'present' ? 'badge-success' : 'badge-neutral';
+  const existingFit = fitxatges.find(f => f.workerId === worker.id && f.date === date && f.obraId === obraId && !f.baixa);
+  const [hores, setHores] = useState(existingFit?.hours ?? 8);
+  const [savedHores, setSavedHores] = useState(false);
+
+  useEffect(() => {
+    setHores(existingFit?.hours ?? 8);
+    setSavedHores(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, obraId, worker.id, existingFit?.hours]);
+
+  const saveHores = () => {
+    const entry = existingFit
+      ? { ...existingFit, hours: Number(hores) || 0 }
+      : { workerId: worker.id, date, baixa: false, obraId, hours: Number(hores) || 0, dieta: false, desplacament: false, comment: '', file: null };
+    onSaveHores(entry);
+    setSavedHores(true);
+    setTimeout(() => setSavedHores(false), 1500);
+  };
+
+  return (
+    <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, gap: 10, flexWrap: 'wrap' }}>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>{worker.name}</div>
+        <span className={`badge ${badgeClass(st.kind)}`}>{st.label}</span>
+      </div>
+      {!locked && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button className="btn" style={{ padding: '6px 10px', background: st.kind === 'present' ? BRAND.olive : '#fff', color: st.kind === 'present' ? '#fff' : BRAND.black, borderColor: '#d8d3c9' }} onClick={() => onMark(worker.id, obraId, date, true)}>Present</button>
+          <button className="btn" style={{ padding: '6px 10px', background: st.kind === 'absent' ? BRAND.terracotta : '#fff', color: st.kind === 'absent' ? '#fff' : BRAND.black, borderColor: '#d8d3c9' }} onClick={() => onMark(worker.id, obraId, date, false)}>Absent</button>
+          {st.kind === 'present' && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 4 }}>
+              <input type="number" min="0" max="24" step="0.5" className="input" style={{ width: 64, padding: '6px 8px' }} value={hores} onChange={e => setHores(e.target.value)} />
+              <span style={{ fontSize: 12, color: '#8a8478' }}>h</span>
+              <button className="btn btn-secondary" style={{ padding: '6px 10px' }} onClick={saveHores}>{savedHores ? 'Desat!' : 'Desa hores'}</button>
+            </div>
+          )}
+        </div>
+      )}
+      {locked && st.file && <AttachmentViewer file={st.file} />}
+    </div>
+  );
+}
+
+function AssistenciaView({ user, obres, workers, fitxatges, solicituds, assistencia, onMark, onSaveHores }) {
   const myObres = obres.filter(o => user.obraIds.includes(o.id));
   const [obraId, setObraId] = useState(myObres[0]?.id || '');
   const [date, setDate] = useState(todayISO());
   const obraWorkers = workers.filter(w => w.obraIds.includes(obraId) && w.role !== 'cap_obra');
-
-  const badgeClass = (kind) => kind === 'baixa' ? 'badge-danger' : kind === 'permis' ? 'badge-warning' : kind === 'present' ? 'badge-success' : 'badge-neutral';
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -940,29 +1070,13 @@ function AssistenciaView({ user, obres, workers, fitxatges, solicituds, assisten
 
       <div style={{ fontSize: 12, color: '#8a8478', display: 'flex', gap: 4 }}>
         <AlertCircle size={14} style={{ flexShrink: 0 }} />
-        <span>Marcar l'assistència és opcional; les baixes i vacances aprovades es mostren automàticament.</span>
+        <span>Marcar l'assistència és opcional; les baixes i vacances aprovades es mostren automàticament. Un cop marcat "Present" pots anotar les hores treballades (per defecte, 8 h).</span>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {obraWorkers.map(w => {
-          const st = getDayStatus(w.id, date, fitxatges, solicituds, assistencia, obraId);
-          const locked = st.kind === 'baixa' || st.kind === 'permis';
-          return (
-            <div key={w.id} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, gap: 10, flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{w.name}</div>
-                <span className={`badge ${badgeClass(st.kind)}`}>{st.label}</span>
-              </div>
-              {!locked && (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn" style={{ padding: '6px 10px', background: st.kind === 'present' ? BRAND.olive : '#fff', color: st.kind === 'present' ? '#fff' : BRAND.black, borderColor: '#d8d3c9' }} onClick={() => onMark(w.id, obraId, date, true)}>Present</button>
-                  <button className="btn" style={{ padding: '6px 10px', background: st.kind === 'absent' ? BRAND.terracotta : '#fff', color: st.kind === 'absent' ? '#fff' : BRAND.black, borderColor: '#d8d3c9' }} onClick={() => onMark(w.id, obraId, date, false)}>Absent</button>
-                </div>
-              )}
-              {locked && st.file && <AttachmentViewer file={st.file} />}
-            </div>
-          );
-        })}
+        {obraWorkers.map(w => (
+          <AssistenciaRow key={w.id} worker={w} date={date} obraId={obraId} fitxatges={fitxatges} solicituds={solicituds} assistencia={assistencia} onMark={onMark} onSaveHores={onSaveHores} />
+        ))}
         {obraWorkers.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>No hi ha personal assignat a aquesta obra.</div>}
       </div>
     </div>
@@ -988,23 +1102,25 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
   const relevantAssistencia = assistencia.filter(a => inRange(a.date) && (obraFilter === 'totes' || a.obraId === obraFilter));
   const relevantCC = assignacionsCC.filter(a => inRange(a.date) && (obraFilter === 'totes' || a.obraId === obraFilter));
 
-  const byWorker = {};
+  const byKey = {};
   relevantFitxatges.forEach(f => {
     const w = workers.find(x => x.id === f.workerId);
     if (!w) return;
-    if (!byWorker[w.id]) byWorker[w.id] = { name: w.name, hours: 0, rate: w.hourlyRate || 0, dietaRate: w.dietaRate || 0, despRate: w.desplacamentRate || 0, dietaCount: 0, despCount: 0, obraNames: new Set() };
-    byWorker[w.id].hours += Number(f.hours) || 0;
-    if (f.dieta) byWorker[w.id].dietaCount += 1;
-    if (f.desplacament) byWorker[w.id].despCount += 1;
-    const o = obres.find(x => x.id === f.obraId);
-    if (o) byWorker[w.id].obraNames.add(o.name);
+    const key = obraFilter === 'totes' ? `${w.id}|${f.obraId}` : w.id;
+    if (!byKey[key]) {
+      const o = obres.find(x => x.id === f.obraId);
+      byKey[key] = { name: w.name, obraName: obraFilter === 'totes' ? (o?.name || '—') : null, hours: 0, rate: w.hourlyRate || 0, dietaRate: w.dietaRate || 0, despRate: w.desplacamentRate || 0, dietaCount: 0, despCount: 0 };
+    }
+    byKey[key].hours += Number(f.hours) || 0;
+    if (f.dieta) byKey[key].dietaCount += 1;
+    if (f.desplacament) byKey[key].despCount += 1;
   });
-  const rows = Object.values(byWorker).map(r => {
+  const rows = Object.values(byKey).map(r => {
     const laborCost = r.hours * r.rate;
     const dietaCost = r.dietaCount * r.dietaRate;
     const despCost = r.despCount * r.despRate;
-    return { ...r, laborCost, dietaCost, despCost, total: laborCost + dietaCost + despCost, obraNames: [...r.obraNames].join(', ') };
-  });
+    return { ...r, laborCost, dietaCost, despCost, total: laborCost + dietaCost + despCost };
+  }).sort((a, b) => a.name.localeCompare(b.name, 'ca') || (a.obraName || '').localeCompare(b.obraName || '', 'ca'));
   const totalHours = rows.reduce((s, r) => s + r.hours, 0);
   const totalGeneral = rows.reduce((s, r) => s + r.total, 0);
   const cols = obraFilter === 'totes' ? 7 : 6;
@@ -1049,7 +1165,7 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
         ccData.push({ Data: a.date, Obra: o?.name || '', 'Centre de cost': cc?.name || '', Treballador: w?.name || '', Hores: fit?.hours || 0 });
       });
     });
-    const resumData = rows.map(r => ({ Treballador: r.name, Obres: r.obraNames, Hores: r.hours, "Mà d'obra (€)": r.laborCost, 'Dietes (€)': r.dietaCost, 'Desplaçaments (€)': r.despCost, 'Total (€)': r.total }));
+    const resumData = rows.map(r => ({ Treballador: r.name, Obra: r.obraName || '', Hores: r.hours, "Mà d'obra (€)": r.laborCost, 'Dietes (€)': r.dietaCost, 'Desplaçaments (€)': r.despCost, 'Total (€)': r.total }));
     const ccResumData = ccRows.map(r => ({ 'Centre de cost': r.name, Obra: r.obraName, Hores: r.hours, Treballadors: r.workerCount }));
 
     const wb = XLSX.utils.book_new();
@@ -1086,10 +1202,10 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
 
       <div className="card" style={{ overflowX: 'auto' }}>
         <table className="recop-table">
-          <thead><tr><th>Treballador</th>{obraFilter === 'totes' && <th>Obres</th>}<th>Hores</th><th>Mà d'obra</th><th>Dietes</th><th>Desplaç.</th><th>Total</th></tr></thead>
+          <thead><tr><th>Treballador</th>{obraFilter === 'totes' && <th>Obra</th>}<th>Hores</th><th>Mà d'obra</th><th>Dietes</th><th>Desplaç.</th><th>Total</th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i}><td>{r.name}</td>{obraFilter === 'totes' && <td>{r.obraNames}</td>}<td>{r.hours}</td><td>{fmtMoney(r.laborCost)}</td><td>{fmtMoney(r.dietaCost)}</td><td>{fmtMoney(r.despCost)}</td><td>{fmtMoney(r.total)}</td></tr>
+              <tr key={i}><td>{r.name}</td>{obraFilter === 'totes' && <td>{r.obraName}</td>}<td>{r.hours}</td><td>{fmtMoney(r.laborCost)}</td><td>{fmtMoney(r.dietaCost)}</td><td>{fmtMoney(r.despCost)}</td><td>{fmtMoney(r.total)}</td></tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={cols} style={{ color: '#8a8478', textAlign: 'center', padding: 16 }}>Sense dades per aquest període.</td></tr>}
           </tbody>
@@ -1402,6 +1518,214 @@ function SolicitudsAdminView({ workers, solicituds, fitxatges, onDecision }) {
   );
 }
 
+/* ============================= Calendari (cap d'obra) ============================= */
+function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, onSetPla, onDeletePla }) {
+  const [mode, setMode] = useState('worker');
+  const sortedWorkers = [...workers].filter(w => w.role !== 'cap_obra').sort((a, b) => a.name.localeCompare(b.name, 'ca'));
+  const sortedObres = [...obres].sort((a, b) => a.name.localeCompare(b.name, 'ca'));
+  const [selectedWorkerId, setSelectedWorkerId] = useState(sortedWorkers[0]?.id || '');
+  const [selectedObraId, setSelectedObraId] = useState(sortedObres[0]?.id || '');
+  const [ym, setYm] = useState(todayISO().slice(0, 7));
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [editObraId, setEditObraId] = useState('');
+
+  const weeks = buildMonthGrid(ym);
+  const today = todayISO();
+
+  const moveMonth = (delta) => {
+    const [y, m] = ym.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setYm(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    setSelectedDate(null);
+  };
+
+  const worker = workers.find(w => w.id === selectedWorkerId);
+  const workerObres = worker ? obres.filter(o => worker.obraIds.includes(o.id)) : [];
+
+  const infoForWorkerDay = (date) => {
+    if (date <= today) return getWorkerDayInfo(selectedWorkerId, date, fitxatges, solicituds);
+    const pla = planificacio.find(p => p.workerId === selectedWorkerId && p.date === date);
+    if (!pla || !pla.obraId) return { kind: 'none', label: '' };
+    const o = obres.find(x => x.id === pla.obraId);
+    return { kind: 'planned', label: o?.name || '' };
+  };
+
+  const openDayEditor = (date) => {
+    if (date === selectedDate) { setSelectedDate(null); return; }
+    setSelectedDate(date);
+    if (date > today) {
+      const pla = planificacio.find(p => p.workerId === selectedWorkerId && p.date === date);
+      setEditObraId(pla?.obraId || '');
+    }
+  };
+
+  const savePla = () => onSetPla(selectedWorkerId, selectedDate, editObraId || null);
+  const clearPla = () => {
+    const pla = planificacio.find(p => p.workerId === selectedWorkerId && p.date === selectedDate);
+    if (pla) onDeletePla(pla.id);
+    setEditObraId('');
+  };
+
+  const obraWorkers = selectedObraId ? workers.filter(w => w.obraIds.includes(selectedObraId) && w.role !== 'cap_obra') : [];
+
+  const countForObraDay = (date) => {
+    if (date <= today) return obraWorkers.filter(w => fitxatges.some(f => f.workerId === w.id && f.date === date && f.obraId === selectedObraId && !f.baixa)).length;
+    return obraWorkers.filter(w => planificacio.some(p => p.workerId === w.id && p.date === date && p.obraId === selectedObraId)).length;
+  };
+
+  const detailForObraDay = (date) => obraWorkers.map(w => {
+    if (date <= today) {
+      const info = getWorkerDayInfo(w.id, date, fitxatges, solicituds);
+      const here = !!info.entries?.some(e => e.obraId === selectedObraId);
+      let label = 'Sense dades';
+      if (info.kind === 'baixa') label = 'Baixa';
+      else if (info.kind === 'permis') label = info.label;
+      else if (here) label = 'Ha treballat aquí';
+      else if (info.kind === 'work') label = 'Ha treballat a una altra obra';
+      return { worker: w, label, here, canAssign: false };
+    }
+    const pla = planificacio.find(p => p.workerId === w.id && p.date === date);
+    let label = 'Sense planificar', here = false;
+    if (pla?.obraId === selectedObraId) { label = 'Planificat aquí'; here = true; }
+    else if (pla?.obraId) { const o = obres.find(x => x.id === pla.obraId); label = `Planificat a ${o?.name || 'una altra obra'}`; }
+    return { worker: w, label, here, canAssign: !here };
+  });
+
+  return (
+    <div className="content-inner" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+        <div>
+          <span className="label">Mostra per</span>
+          <div className="segmented">
+            <button className={mode === 'worker' ? 'active' : ''} onClick={() => { setMode('worker'); setSelectedDate(null); }}>Treballador</button>
+            <button className={mode === 'obra' ? 'active' : ''} onClick={() => { setMode('obra'); setSelectedDate(null); }}>Obra</button>
+          </div>
+        </div>
+        {mode === 'worker' ? (
+          <div style={{ flex: '1 1 220px' }}>
+            <span className="label">Treballador</span>
+            <select className="select" value={selectedWorkerId} onChange={e => { setSelectedWorkerId(e.target.value); setSelectedDate(null); }}>
+              {sortedWorkers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+          </div>
+        ) : (
+          <div style={{ flex: '1 1 220px' }}>
+            <span className="label">Obra</span>
+            <select className="select" value={selectedObraId} onChange={e => { setSelectedObraId(e.target.value); setSelectedDate(null); }}>
+              {sortedObres.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveMonth(-1)}><ChevronLeft size={16} /></button>
+          <div style={{ fontWeight: 800, fontSize: 15, textTransform: 'capitalize' }}>
+            {new Date(ym + '-01T00:00:00').toLocaleDateString('ca-ES', { month: 'long', year: 'numeric' })}
+          </div>
+          <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveMonth(1)}><ChevronRight size={16} /></button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, fontSize: 11, fontWeight: 700, color: '#8a8478', textAlign: 'center', marginBottom: 6 }}>
+          {['Dl', 'Dt', 'Dc', 'Dj', 'Dv', 'Ds', 'Dg'].map(d => <div key={d}>{d}</div>)}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {weeks.map((week, wi) => (
+            <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4 }}>
+              {week.map((date, di) => {
+                if (!date) return <div key={di} />;
+                const isToday = date === today;
+                const isSelected = date === selectedDate;
+                let bg = '#fff', color = BRAND.black, sub = '';
+                if (mode === 'worker') {
+                  const info = infoForWorkerDay(date);
+                  if (info.kind === 'baixa') { bg = '#fbe4e1'; color = BRAND.terracotta; sub = 'Baixa'; }
+                  else if (info.kind === 'permis') { bg = '#fbeee2'; color = '#b5651d'; sub = info.label; }
+                  else if (info.kind === 'work') { bg = '#e9f0d9'; color = BRAND.olive; sub = info.entries.length > 1 ? `${info.entries.length} obres` : ((obres.find(o => o.id === info.entries[0].obraId)?.name || '').slice(0, 10)); }
+                  else if (info.kind === 'planned') { bg = '#eef2fb'; color = '#3a5a9c'; sub = info.label.slice(0, 10); }
+                } else if (selectedObraId) {
+                  const n = countForObraDay(date);
+                  if (n > 0) { bg = date > today ? '#eef2fb' : '#e9f0d9'; color = date > today ? '#3a5a9c' : BRAND.olive; sub = `${n}`; }
+                }
+                return (
+                  <button key={di} onClick={() => (mode === 'worker' ? openDayEditor(date) : setSelectedDate(isSelected ? null : date))} style={{
+                    background: bg, border: `1.5px solid ${isSelected ? BRAND.terracotta : '#e7e2d8'}`, borderRadius: 8, padding: '6px 2px',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer', minHeight: 44,
+                    boxShadow: isToday ? `inset 0 0 0 2px ${BRAND.black}` : 'none',
+                  }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color }}>{Number(date.slice(8, 10))}</span>
+                    {sub && <span style={{ fontSize: 9, fontWeight: 700, color, textAlign: 'center', lineHeight: 1.1 }}>{sub}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 10, fontSize: 11, color: '#8a8478' }}>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#e9f0d9', marginRight: 4 }} />Treballat / present</span>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#eef2fb', marginRight: 4 }} />Planificat (futur)</span>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#fbe4e1', marginRight: 4 }} />Baixa</span>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#fbeee2', marginRight: 4 }} />Vacances/Permís</span>
+        </div>
+      </div>
+
+      {selectedDate && mode === 'worker' && (
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, textTransform: 'capitalize' }}>{fmtDate(selectedDate)} · {worker?.name}</div>
+          {selectedDate <= today ? (
+            (() => {
+              const info = getWorkerDayInfo(selectedWorkerId, selectedDate, fitxatges, solicituds);
+              if (info.kind === 'baixa') return <span className="badge badge-danger">Baixa mèdica</span>;
+              if (info.kind === 'permis') return <span className="badge badge-warning">{info.label}</span>;
+              if (info.kind === 'work') return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {info.entries.map(f => {
+                    const o = obres.find(x => x.id === f.obraId);
+                    return <div key={f.id} style={{ fontSize: 13 }}>{o?.name || '—'} · {f.hours} h</div>;
+                  })}
+                </div>
+              );
+              return <div style={{ fontSize: 13, color: '#8a8478' }}>Sense dades aquest dia.</div>;
+            })()
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>
+                <span className="label">Obra prevista</span>
+                <select className="select" value={editObraId} onChange={e => setEditObraId(e.target.value)}>
+                  <option value="">Sense assignar</option>
+                  {workerObres.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost" style={{ flex: 1 }} onClick={clearPla}>Esborra</button>
+                <button className="btn btn-primary" style={{ flex: 1 }} onClick={savePla}>Desa</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {selectedDate && mode === 'obra' && (
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ fontWeight: 800, fontSize: 14, textTransform: 'capitalize', marginBottom: 4 }}>{fmtDate(selectedDate)} · {obres.find(o => o.id === selectedObraId)?.name}</div>
+          {detailForObraDay(selectedDate).length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>Cap treballador assignat a aquesta obra.</div>}
+          {detailForObraDay(selectedDate).map(({ worker: w, label, here, canAssign }) => (
+            <div key={w.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderTop: '1px solid #f1ede4' }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{w.name}</div>
+                <div style={{ fontSize: 12, color: here ? BRAND.olive : '#8a8478' }}>{label}</div>
+              </div>
+              {selectedDate > today && canAssign && (
+                <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => onSetPla(w.id, selectedDate, selectedObraId)}>Assigna aquí</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================= App ============================= */
 function App() {
   const [loaded, setLoaded] = useState(false);
@@ -1413,12 +1737,13 @@ function App() {
   const [notificacions, setNotificacions] = useState([]);
   const [assignacionsCC, setAssignacionsCC] = useState([]);
   const [assistencia, setAssistencia] = useState([]);
+  const [planificacio, setPlanificacio] = useState([]);
   const [user, setUser] = useState(null);
   const [tab, setTab] = useState('fitxatge');
 
   useEffect(() => {
     (async () => {
-      const [w, o, f, s, n, cc, a] = await Promise.all([
+      const [w, o, f, s, n, cc, a, p] = await Promise.all([
         supabaseClient.from('workers').select('*'),
         supabaseClient.from('obres').select('*'),
         supabaseClient.from('fitxatges').select('*'),
@@ -1426,8 +1751,9 @@ function App() {
         supabaseClient.from('notificacions').select('*'),
         supabaseClient.from('assignacions_cc').select('*'),
         supabaseClient.from('assistencia').select('*'),
+        supabaseClient.from('planificacio').select('*'),
       ]);
-      const firstError = [w, o, f, s, n, cc, a].find(r => r.error);
+      const firstError = [w, o, f, s, n, cc, a, p].find(r => r.error);
       if (firstError) {
         console.error(firstError.error);
         const detail = firstError.error?.message || firstError.error?.hint || '';
@@ -1455,6 +1781,7 @@ function App() {
       setNotificacions((n.data || []).map(notifFromRow));
       setAssignacionsCC((cc.data || []).map(ccFromRow));
       setAssistencia((a.data || []).map(assistFromRow));
+      setPlanificacio((p.data || []).map(planFromRow));
 
       let savedId = null;
       try { savedId = window.localStorage.getItem(SESSION_KEY); } catch (e) { /* ignore */ }
@@ -1540,6 +1867,26 @@ function App() {
     setAssistencia(prev => [...prev.filter(a => !(a.workerId === saved.workerId && a.obraId === saved.obraId && a.date === saved.date)), saved]);
   };
 
+  // Planificació: destinació prevista d'un treballador en un dia futur (o
+  // consulta d'un dia passat). Fem servir insert/update explícits (com a
+  // fitxatges) en lloc d'upsert perquè aquí sí que sempre sabem si ja
+  // existia una fila (la tenim carregada en local) o no.
+  const handleSetPla = async (workerId, date, obraId) => {
+    const existing = planificacio.find(p => p.workerId === workerId && p.date === date);
+    const row = planToRow({ workerId, date, obraId });
+    const { data, error } = existing
+      ? await supabaseClient.from('planificacio').update(row).eq('id', existing.id).select().single()
+      : await supabaseClient.from('planificacio').insert(row).select().single();
+    if (error) { console.error(error); return; }
+    const saved = planFromRow(data);
+    setPlanificacio(prev => [...prev.filter(p => p.id !== saved.id), saved]);
+  };
+  const handleDeletePla = async (id) => {
+    const { error } = await supabaseClient.from('planificacio').delete().eq('id', id);
+    if (error) { console.error(error); return; }
+    setPlanificacio(prev => prev.filter(p => p.id !== id));
+  };
+
   const handleObraSave = async (obra) => {
     const isNew = !obres.some(o => o.id === obra.id);
     const row = { ...obraToRow(obra), id: obra.id || uid() };
@@ -1614,12 +1961,14 @@ function App() {
     ],
     encarregat: [
       { key: 'fitxatge', label: 'Fitxatge', icon: Clock },
+      { key: 'historial', label: 'Historial', icon: History },
       { key: 'centres', label: 'Centres', icon: Briefcase },
       { key: 'assistencia', label: 'Assistència', icon: Users },
       { key: 'solicituds', label: 'Sol·licituds', icon: FileText },
     ],
     cap_obra: [
       { key: 'resum', label: 'Resum', icon: Home },
+      { key: 'calendari', label: 'Calendari', icon: Calendar },
       { key: 'obres', label: 'Obres', icon: Building2 },
       { key: 'personal', label: 'Personal', icon: Users },
       { key: 'solicituds_admin', label: 'Sol·licituds', icon: FileText },
@@ -1634,12 +1983,14 @@ function App() {
     }
     if (user.role === 'encarregat') {
       if (tab === 'fitxatge') return <FitxatgeView user={user} obres={obres} fitxatges={fitxatges} onSave={handleFitxatgeSave} onDelete={handleFitxatgeDelete} />;
+      if (tab === 'historial') return <HistorialView user={user} obres={obres} fitxatges={fitxatges} />;
       if (tab === 'centres') return <CostCenterView user={user} obres={obres} workers={workers} assignacionsCC={assignacionsCC} onSave={handleAssignacioCC} />;
-      if (tab === 'assistencia') return <AssistenciaView user={user} obres={obres} workers={workers} fitxatges={fitxatges} solicituds={solicituds} assistencia={assistencia} onMark={handleMarkAssistencia} />;
+      if (tab === 'assistencia') return <AssistenciaView user={user} obres={obres} workers={workers} fitxatges={fitxatges} solicituds={solicituds} assistencia={assistencia} onMark={handleMarkAssistencia} onSaveHores={handleFitxatgeSave} />;
       if (tab === 'solicituds') return <SolicitudsView user={user} solicituds={solicituds} onCreate={handleSolicitudCreate} onUpdate={handleSolicitudUpdate} />;
     }
     if (user.role === 'cap_obra') {
       if (tab === 'resum') return <ResumView obres={obres} workers={workers} fitxatges={fitxatges} assistencia={assistencia} assignacionsCC={assignacionsCC} />;
+      if (tab === 'calendari') return <CalendariView workers={workers} obres={obres} fitxatges={fitxatges} solicituds={solicituds} planificacio={planificacio} onSetPla={handleSetPla} onDeletePla={handleDeletePla} />;
       if (tab === 'obres') return <ObresView obres={obres} onSave={handleObraSave} />;
       if (tab === 'personal') return <PersonalView workers={workers} obres={obres} onSave={handleWorkerSave} onImport={handleWorkersImport} />;
       if (tab === 'solicituds_admin') return <SolicitudsAdminView workers={workers} solicituds={solicituds} fitxatges={fitxatges} onDecision={handleSolicitudDecision} />;
