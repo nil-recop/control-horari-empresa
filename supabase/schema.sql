@@ -10,6 +10,7 @@ create table if not exists workers (
   name text not null,
   pin text not null,
   role text not null check (role in ('treballador','encarregat','cap_obra')),
+  active boolean not null default true,
   hourly_rate numeric not null default 0,
   dieta_rate numeric not null default 0,
   desplacament_rate numeric not null default 0,
@@ -36,6 +37,14 @@ create table if not exists fitxatges (
   dieta boolean not null default false,
   desplacament boolean not null default false,
   comment text default '',
+  -- Preus "congelats" en el moment de crear el fitxatge, perquè un canvi
+  -- de preu del treballador més endavant no alteri el cost d'hores ja
+  -- registrades. Poden quedar a null en registres molt antics (anteriors
+  -- a aquesta columna); en aquest cas l'aplicació fa servir el preu actual
+  -- del treballador com a reserva.
+  hourly_rate numeric,
+  dieta_rate numeric,
+  desplacament_rate numeric,
   file_name text,
   file_path text,
   created_at timestamptz not null default now(),
