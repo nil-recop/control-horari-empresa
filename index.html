@@ -164,12 +164,12 @@ function getDayStatus(workerId, date, fitxatges, solicituds, assistencia, obraId
 // servir per als calendaris: historial i planificació).
 function getWorkerDayInfo(workerId, date, fitxatges, solicituds) {
   const baixa = fitxatges.find(f => f.workerId === workerId && f.date === date && f.baixa);
-  if (baixa) return { kind: 'baixa', label: 'Baixa', entries: [] };
+  if (baixa) return { kind: 'baixa', label: 'Baixa', entries: [], file: baixa.file || null };
   const sol = solicituds.find(s => s.workerId === workerId && s.status === 'aprovada' && date >= s.dateFrom && date <= s.dateTo);
-  if (sol) return { kind: 'permis', label: sol.type === 'vacances' ? 'Vacances' : 'Permís', entries: [] };
+  if (sol) return { kind: 'permis', label: sol.type === 'vacances' ? 'Vacances' : 'Permís', entries: [], file: sol.file || null, obraId: sol.obraId || null };
   const entries = fitxatges.filter(f => f.workerId === workerId && f.date === date && !f.baixa);
-  if (entries.length > 0) return { kind: 'work', label: entries.length === 1 ? 'treballat' : `${entries.length} obres`, entries };
-  return { kind: 'none', label: '', entries: [] };
+  if (entries.length > 0) return { kind: 'work', label: entries.length === 1 ? 'treballat' : `${entries.length} obres`, entries, file: null };
+  return { kind: 'none', label: '', entries: [], file: null };
 }
 // Graella d'un mes (dilluns a diumenge), amb null als forats abans/després
 // del mes. S'usa als calendaris d'historial i planificació.
@@ -198,8 +198,8 @@ const obraToRow = (o) => ({ id: o.id, name: o.name, address: o.address, active: 
 const fitxatgeFromRow = (r) => ({ id: r.id, workerId: r.worker_id, date: r.date, baixa: r.baixa, obraId: r.obra_id, hours: r.hours, dieta: r.dieta, desplacament: r.desplacament, comment: r.comment || '', file: r.file_path ? { name: r.file_name, path: r.file_path } : null });
 const fitxatgeToRow = (f) => ({ worker_id: f.workerId, date: f.date, baixa: f.baixa, obra_id: f.baixa ? null : f.obraId, hours: f.baixa ? 0 : Number(f.hours) || 0, dieta: f.baixa ? false : !!f.dieta, desplacament: f.baixa ? false : !!f.desplacament, comment: f.baixa ? '' : (f.comment || ''), file_name: f.file?.name || null, file_path: f.file?.path || null });
 
-const solicitudFromRow = (r) => ({ id: r.id, workerId: r.worker_id, type: r.type, dateFrom: r.date_from, dateTo: r.date_to, comment: r.comment || '', file: r.file_path ? { name: r.file_name, path: r.file_path } : null, status: r.status, createdAt: r.created_at });
-const solicitudToRow = (s) => ({ worker_id: s.workerId, type: s.type, date_from: s.dateFrom, date_to: s.dateTo, comment: s.comment || '', file_name: s.file?.name || null, file_path: s.file?.path || null, status: s.status });
+const solicitudFromRow = (r) => ({ id: r.id, workerId: r.worker_id, type: r.type, dateFrom: r.date_from, dateTo: r.date_to, comment: r.comment || '', obraId: r.obra_id || null, file: r.file_path ? { name: r.file_name, path: r.file_path } : null, status: r.status, createdAt: r.created_at });
+const solicitudToRow = (s) => ({ worker_id: s.workerId, type: s.type, date_from: s.dateFrom, date_to: s.dateTo, comment: s.comment || '', obra_id: s.obraId || null, file_name: s.file?.name || null, file_path: s.file?.path || null, status: s.status });
 
 const notifFromRow = (r) => ({ id: r.id, workerId: r.worker_id, message: r.message, read: r.read, target: r.target || null, createdAt: new Date(r.created_at).toLocaleString('ca-ES') });
 
@@ -482,7 +482,7 @@ function AttachmentViewer({ file }) {
 /* ============================= Fitxatge (treballador + encarregat) ============================= */
 function FitxatgeView({ user, obres, fitxatges, onSave, onDelete }) {
   const [date, setDate] = useState(todayISO());
-  const myObres = obres.filter(o => user.obraIds.includes(o.id));
+  const myObres = obres.filter(o => user.obraIds.includes(o.id)).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
 
   const dayFitxatges = fitxatges.filter(f => f.workerId === user.id && f.date === date);
   const baixaEntry = dayFitxatges.find(f => f.baixa);
@@ -720,14 +720,13 @@ function FitxatgeView({ user, obres, fitxatges, onSave, onDelete }) {
 }
 
 /* ============================= Historial (treballador) ============================= */
-function HistorialView({ user, obres, fitxatges }) {
+function HistorialView({ user, obres, fitxatges, solicituds, planificacio }) {
   const [ym, setYm] = useState(todayISO().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(null);
+  const today = todayISO();
 
-  const monthEntries = fitxatges.filter(f => f.workerId === user.id && f.date.slice(0, 7) === ym);
-  const byDate = {};
-  monthEntries.forEach(f => { (byDate[f.date] = byDate[f.date] || []).push(f); });
-  const totalHoresMes = monthEntries.reduce((s, f) => s + (f.baixa ? 0 : Number(f.hours) || 0), 0);
+  const monthEntries = fitxatges.filter(f => f.workerId === user.id && !f.baixa && f.date.slice(0, 7) === ym);
+  const totalHoresMes = monthEntries.reduce((s, f) => s + (Number(f.hours) || 0), 0);
   const weeks = buildMonthGrid(ym);
 
   const moveMonth = (delta) => {
@@ -737,7 +736,15 @@ function HistorialView({ user, obres, fitxatges }) {
     setSelectedDate(null);
   };
 
-  const dayEntries = selectedDate ? (byDate[selectedDate] || []) : [];
+  const dayInfo = (date) => {
+    if (date <= today) return getWorkerDayInfo(user.id, date, fitxatges, solicituds);
+    const pla = planificacio.find(p => p.workerId === user.id && p.date === date);
+    if (!pla || !pla.obraId) return { kind: 'none', label: '', entries: [] };
+    const o = obres.find(x => x.id === pla.obraId);
+    return { kind: 'planned', label: o?.name || '', entries: [] };
+  };
+
+  const selectedInfo = selectedDate ? dayInfo(selectedDate) : null;
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -761,51 +768,74 @@ function HistorialView({ user, obres, fitxatges }) {
             <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4 }}>
               {week.map((date, di) => {
                 if (!date) return <div key={di} />;
-                const entries = byDate[date] || [];
-                const baixaDay = entries.find(f => f.baixa);
-                const hours = entries.reduce((s, f) => s + (f.baixa ? 0 : Number(f.hours) || 0), 0);
-                const isToday = date === todayISO();
+                const info = dayInfo(date);
+                const hours = info.kind === 'work' ? info.entries.reduce((s, f) => s + (Number(f.hours) || 0), 0) : 0;
+                const isToday = date === today;
                 const isSelected = date === selectedDate;
-                let bg = '#fff', color = BRAND.black;
-                if (baixaDay) { bg = '#fbe4e1'; color = BRAND.terracotta; }
-                else if (hours > 0) { bg = '#e9f0d9'; color = BRAND.olive; }
+                let bg = '#fff', color = BRAND.black, sub = '';
+                if (info.kind === 'baixa') { bg = '#fbe4e1'; color = BRAND.terracotta; sub = 'Baixa'; }
+                else if (info.kind === 'permis') { bg = '#fbeee2'; color = '#b5651d'; sub = info.label; }
+                else if (info.kind === 'work') { bg = '#e9f0d9'; color = BRAND.olive; sub = `${hours}h`; }
+                else if (info.kind === 'planned') { bg = '#eef2fb'; color = '#3a5a9c'; sub = info.label.slice(0, 10); }
                 return (
                   <button key={di} onClick={() => setSelectedDate(isSelected ? null : date)} style={{
                     background: bg, border: `1.5px solid ${isSelected ? BRAND.terracotta : '#e7e2d8'}`, borderRadius: 8, padding: '6px 2px',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer', minHeight: 44,
                     boxShadow: isToday ? `inset 0 0 0 2px ${BRAND.black}` : 'none',
                   }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color }}>{Number(date.slice(8, 10))}</span>
-                    {baixaDay && <span style={{ fontSize: 9, fontWeight: 700, color }}>Baixa</span>}
-                    {!baixaDay && hours > 0 && <span style={{ fontSize: 9, fontWeight: 700, color }}>{hours}h</span>}
+                    {sub && <span style={{ fontSize: 9, fontWeight: 700, color, textAlign: 'center', lineHeight: 1.1 }}>{sub}</span>}
                   </button>
                 );
               })}
             </div>
           ))}
         </div>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 10, fontSize: 11, color: '#8a8478' }}>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#e9f0d9', marginRight: 4 }} />Treballat</span>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#eef2fb', marginRight: 4 }} />Planificat (futur)</span>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#fbe4e1', marginRight: 4 }} />Baixa</span>
+          <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: '#fbeee2', marginRight: 4 }} />Vacances/Permís</span>
+        </div>
       </div>
 
-      {selectedDate && (
+      {selectedDate && selectedInfo && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontWeight: 800, fontSize: 14, textTransform: 'capitalize' }}>{fmtDate(selectedDate)}</div>
-          {dayEntries.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>Sense fitxatges aquest dia.</div>}
-          {dayEntries.map(f => {
+          {selectedInfo.kind === 'none' && <div style={{ fontSize: 13, color: '#8a8478' }}>Sense dades aquest dia.</div>}
+          {selectedInfo.kind === 'baixa' && (
+            <div className="card">
+              <span className="badge badge-danger">Baixa mèdica</span>
+              {selectedInfo.file && <div style={{ marginTop: 8 }}><AttachmentViewer file={selectedInfo.file} /></div>}
+            </div>
+          )}
+          {selectedInfo.kind === 'permis' && (
+            <div className="card">
+              <span className="badge badge-warning">{selectedInfo.label}</span>
+              {selectedInfo.obraId && <div style={{ fontSize: 13, marginTop: 8 }}>Obra: {obres.find(o => o.id === selectedInfo.obraId)?.name || '—'}</div>}
+              {selectedInfo.file && <div style={{ marginTop: 8 }}><AttachmentViewer file={selectedInfo.file} /></div>}
+            </div>
+          )}
+          {selectedInfo.kind === 'planned' && (
+            <div className="card">
+              <span className="badge badge-neutral" style={{ background: '#eef2fb', color: '#3a5a9c' }}>Planificat: {selectedInfo.label}</span>
+            </div>
+          )}
+          {selectedInfo.kind === 'work' && selectedInfo.entries.map(f => {
             const obra = obres.find(o => o.id === f.obraId);
             return (
               <div key={f.id} className="card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{f.baixa ? 'Baixa mèdica' : (obra?.name || '—')}</div>
-                  {f.baixa ? <span className="badge badge-danger">Baixa</span> : <span className="badge badge-olive">{f.hours} h</span>}
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{obra?.name || '—'}</div>
+                  <span className="badge badge-olive">{f.hours} h</span>
                 </div>
-                {!f.baixa && (f.dieta || f.desplacament) && (
+                {(f.dieta || f.desplacament) && (
                   <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                     {f.dieta && <span className="chip">Dieta</span>}
                     {f.desplacament && <span className="chip">Desplaçament</span>}
                   </div>
                 )}
-                {!f.baixa && f.comment && <div style={{ fontSize: 13, marginTop: 8 }}>{f.comment}</div>}
-                {f.file && <div style={{ marginTop: 8 }}><AttachmentViewer file={f.file} /></div>}
+                {f.comment && <div style={{ fontSize: 13, marginTop: 8 }}>{f.comment}</div>}
               </div>
             );
           })}
@@ -816,7 +846,7 @@ function HistorialView({ user, obres, fitxatges }) {
 }
 
 /* ============================= Sol·licituds (treballador) ============================= */
-function SolicitudsView({ user, solicituds, onCreate, onUpdate }) {
+function SolicitudsView({ user, obres, solicituds, onCreate, onUpdate }) {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [type, setType] = useState('vacances');
@@ -824,6 +854,10 @@ function SolicitudsView({ user, solicituds, onCreate, onUpdate }) {
   const [dateTo, setDateTo] = useState(todayISO());
   const [comment, setComment] = useState('');
   const [file, setFile] = useState(null);
+  const [obraId, setObraId] = useState('');
+
+  const myObres = (obres || []).filter(o => user.obraIds.includes(o.id)).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
+  const vacancesObres = myObres.length > 0 ? myObres : [...(obres || [])].sort((a, b) => a.name.localeCompare(b.name, 'ca'));
 
   const mine = solicituds.filter(s => s.workerId === user.id).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   const statusBadge = (st) => st === 'aprovada' ? <span className="badge badge-success">Aprovada</span>
@@ -833,17 +867,21 @@ function SolicitudsView({ user, solicituds, onCreate, onUpdate }) {
   const startNew = () => {
     setEditingId(null);
     setType('vacances'); setDateFrom(todayISO()); setDateTo(todayISO()); setComment(''); setFile(null);
+    setObraId(vacancesObres[0]?.id || '');
     setShowForm(true);
   };
   const startEdit = (s) => {
     setEditingId(s.id);
     setType(s.type); setDateFrom(s.dateFrom); setDateTo(s.dateTo); setComment(s.comment || ''); setFile(s.file || null);
+    setObraId(s.obraId || vacancesObres[0]?.id || '');
     setShowForm(true);
   };
 
+  const canSubmit = dateFrom <= dateTo && (type !== 'vacances' || !!obraId);
+
   const submit = () => {
-    if (!dateFrom || !dateTo) return;
-    const payload = { workerId: user.id, type, dateFrom, dateTo, comment, file: type === 'permis' ? file : null, status: 'pendent' };
+    if (!canSubmit) return;
+    const payload = { workerId: user.id, type, dateFrom, dateTo, comment, obraId: type === 'vacances' ? obraId : null, file: type === 'permis' ? file : null, status: 'pendent' };
     if (editingId) onUpdate(editingId, payload);
     else onCreate(payload);
     setShowForm(false); setEditingId(null); setComment(''); setFile(null); setDateFrom(todayISO()); setDateTo(todayISO());
@@ -874,6 +912,15 @@ function SolicitudsView({ user, solicituds, onCreate, onUpdate }) {
             <span className="label">Comentari (opcional)</span>
             <textarea className="textarea" rows={2} value={comment} onChange={e => setComment(e.target.value)} />
           </div>
+          {type === 'vacances' && (
+            <div>
+              <span className="label">Obra</span>
+              <select className="select" value={obraId} onChange={e => setObraId(e.target.value)}>
+                <option value="">Selecciona una obra…</option>
+                {vacancesObres.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </div>
+          )}
           {type === 'permis' && (
             <div>
               <span className="label">Justificant (opcional)</span>
@@ -886,7 +933,7 @@ function SolicitudsView({ user, solicituds, onCreate, onUpdate }) {
           )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { setShowForm(false); setEditingId(null); }}>Cancel·la</button>
-            <button className="btn btn-primary" style={{ flex: 1 }} disabled={dateFrom > dateTo} onClick={submit}>{editingId ? 'Desa els canvis' : 'Envia'}</button>
+            <button className="btn btn-primary" style={{ flex: 1 }} disabled={!canSubmit} onClick={submit}>{editingId ? 'Desa els canvis' : 'Envia'}</button>
           </div>
         </div>
       )}
@@ -899,6 +946,7 @@ function SolicitudsView({ user, solicituds, onCreate, onUpdate }) {
               <div>
                 <div style={{ fontWeight: 700, fontSize: 14 }}>{s.type === 'vacances' ? 'Vacances' : 'Permís'}</div>
                 <div style={{ fontSize: 12, color: '#8a8478' }}>{fmtDate(s.dateFrom)} — {fmtDate(s.dateTo)}</div>
+                {s.obraId && <div style={{ fontSize: 12, color: '#8a8478' }}>{obres.find(o => o.id === s.obraId)?.name || ''}</div>}
               </div>
               {statusBadge(s.status)}
             </div>
@@ -918,7 +966,7 @@ function SolicitudsView({ user, solicituds, onCreate, onUpdate }) {
 
 /* ============================= Centres de cost (encarregat) ============================= */
 function CostCenterView({ user, obres, workers, assignacionsCC, onSave }) {
-  const myObres = obres.filter(o => user.obraIds.includes(o.id));
+  const myObres = obres.filter(o => user.obraIds.includes(o.id)).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
   const [obraId, setObraId] = useState(myObres[0]?.id || '');
   const obra = obres.find(o => o.id === obraId);
   const [date, setDate] = useState(todayISO());
@@ -1048,7 +1096,7 @@ function AssistenciaRow({ worker, date, obraId, fitxatges, solicituds, assistenc
 }
 
 function AssistenciaView({ user, obres, workers, fitxatges, solicituds, assistencia, onMark, onSaveHores }) {
-  const myObres = obres.filter(o => user.obraIds.includes(o.id));
+  const myObres = obres.filter(o => user.obraIds.includes(o.id)).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
   const [obraId, setObraId] = useState(myObres[0]?.id || '');
   const [date, setDate] = useState(todayISO());
   const obraWorkers = workers.filter(w => w.obraIds.includes(obraId) && w.role !== 'cap_obra');
@@ -1195,7 +1243,7 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
           <span className="label">Obra</span>
           <select className="select" value={obraFilter} onChange={e => setObraFilter(e.target.value)}>
             <option value="totes">Totes les obres</option>
-            {obres.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            {[...obres].sort((a, b) => a.name.localeCompare(b.name, 'ca')).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
           </select>
         </div>
       </div>
@@ -1241,7 +1289,7 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
 }
 
 /* ============================= Obres (cap d'obra) ============================= */
-function ObresView({ obres, onSave }) {
+function ObresView({ obres, onSave, onDelete }) {
   const blank = { id: null, name: '', address: '', active: true, costCenters: [] };
   const [editingId, setEditingId] = useState(null);
   const [showNew, setShowNew] = useState(false);
@@ -1254,10 +1302,41 @@ function ObresView({ obres, onSave }) {
   const addCC = () => { if (!newCC.trim()) return; setForm(f => ({ ...f, costCenters: [...f.costCenters, { id: uid(), name: newCC.trim() }] })); setNewCC(''); };
   const removeCC = (id) => setForm(f => ({ ...f, costCenters: f.costCenters.filter(c => c.id !== id) }));
   const save = () => { if (!form.name.trim()) return; onSave(form); setEditingId(null); setShowNew(false); setForm(blank); };
+  const remove = (o) => {
+    if (window.confirm(`Eliminar l'obra "${o.name}"? Aquesta acció no es pot desfer.`)) {
+      onDelete(o.id);
+      if (editingId === o.id) { setEditingId(null); setForm(blank); }
+    }
+  };
 
   const visibleObres = obres
     .filter(o => filter === 'totes' || (filter === 'actives' ? o.active : !o.active))
     .sort((a, b) => a.name.localeCompare(b.name, 'ca'));
+
+  const EditForm = () => (
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, gridColumn: '1 / -1' }}>
+      <div style={{ fontWeight: 800 }}>Edita obra</div>
+      <div><span className="label">Nom de l'obra</span><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+      <div><span className="label">Adreça</span><input className="input" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} /></div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
+        <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} /> Obra activa
+      </label>
+      <div>
+        <span className="label">Centres de cost</span>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+          {form.costCenters.map(cc => <span key={cc.id} className="chip">{cc.name} <X size={12} style={{ cursor: 'pointer' }} onClick={() => removeCC(cc.id)} /></span>)}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input className="input" placeholder="Nom del centre de cost" value={newCC} onChange={e => setNewCC(e.target.value)} onKeyDown={e => e.key === 'Enter' && addCC()} />
+          <button className="btn btn-secondary" onClick={addCC}>Afegeix</button>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { setEditingId(null); setShowNew(false); }}>Cancel·la</button>
+        <button className="btn btn-primary" style={{ flex: 1 }} onClick={save}>Desa</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="content-inner" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1270,9 +1349,9 @@ function ObresView({ obres, onSave }) {
         </div>
       </div>
 
-      {(showNew || editingId) && (
+      {showNew && (
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 480 }}>
-          <div style={{ fontWeight: 800 }}>{editingId ? 'Edita obra' : 'Nova obra'}</div>
+          <div style={{ fontWeight: 800 }}>Nova obra</div>
           <div><span className="label">Nom de l'obra</span><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
           <div><span className="label">Adreça</span><input className="input" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} /></div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
@@ -1297,19 +1376,25 @@ function ObresView({ obres, onSave }) {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 12 }}>
         {visibleObres.map(o => (
-          <div key={o.id} className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-              <div>
-                <div style={{ fontWeight: 800 }}>{o.name}</div>
-                <div style={{ fontSize: 12, color: '#8a8478' }}>{o.address}</div>
+          <React.Fragment key={o.id}>
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <div>
+                  <div style={{ fontWeight: 800 }}>{o.name}</div>
+                  <div style={{ fontSize: 12, color: '#8a8478' }}>{o.address}</div>
+                </div>
+                <span className={`badge ${o.active ? 'badge-success' : 'badge-neutral'}`}>{o.active ? 'Activa' : 'Inactiva'}</span>
               </div>
-              <span className={`badge ${o.active ? 'badge-success' : 'badge-neutral'}`}>{o.active ? 'Activa' : 'Inactiva'}</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                {o.costCenters.map(cc => <span key={cc.id} className="chip">{cc.name}</span>)}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button className="btn btn-ghost" onClick={() => startEdit(o)}><Pencil size={14} /> Edita</button>
+                <button className="btn btn-danger" onClick={() => remove(o)}><X size={14} /> Elimina</button>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-              {o.costCenters.map(cc => <span key={cc.id} className="chip">{cc.name}</span>)}
-            </div>
-            <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => startEdit(o)}><Pencil size={14} /> Edita</button>
-          </div>
+            {editingId === o.id && <EditForm />}
+          </React.Fragment>
         ))}
         {visibleObres.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>Cap obra amb aquest filtre.</div>}
       </div>
@@ -1318,7 +1403,7 @@ function ObresView({ obres, onSave }) {
 }
 
 /* ============================= Personal (cap d'obra) ============================= */
-function PersonalView({ workers, obres, onSave, onImport }) {
+function PersonalView({ workers, obres, onSave, onDelete, onImport }) {
   const blank = { id: null, name: '', pin: '', role: 'treballador', hourlyRate: 15, dietaRate: 12, desplacamentRate: 8, obraIds: [] };
   const [editingId, setEditingId] = useState(null);
   const [showNew, setShowNew] = useState(false);
@@ -1338,6 +1423,12 @@ function PersonalView({ workers, obres, onSave, onImport }) {
     if (!form.name.trim() || !/^\d{4}$/.test(form.pin)) return;
     onSave(form);
     setEditingId(null); setShowNew(false); setForm(blank);
+  };
+  const remove = (w) => {
+    if (window.confirm(`Eliminar el treballador "${w.name}"? Això esborrarà també el seu historial de fitxatges, sol·licituds i assistència. Aquesta acció no es pot desfer.`)) {
+      onDelete(w.id);
+      if (editingId === w.id) { setEditingId(null); setForm(blank); }
+    }
   };
 
   const roleFromLabel = (raw) => {
@@ -1381,6 +1472,43 @@ function PersonalView({ workers, obres, onSave, onImport }) {
     setTimeout(() => setImportMsg(''), 5000);
   };
 
+  const EditForm = () => (
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, gridColumn: '1 / -1' }}>
+      <div style={{ fontWeight: 800 }}>Edita treballador</div>
+      <div><span className="label">Nom complet</span><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+      <div>
+        <span className="label">PIN (4 dígits)</span>
+        <input className="input" maxLength={4} value={form.pin} onChange={e => setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))} />
+        {!/^\d{4}$/.test(form.pin) && <div style={{ fontSize: 11, color: '#8a8478', marginTop: 4 }}>Ha de tenir 4 dígits.</div>}
+      </div>
+      <div>
+        <span className="label">Rol</span>
+        <select className="select" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+          <option value="cap_obra">Cap d'obra</option>
+          <option value="encarregat">Encarregat</option>
+          <option value="treballador">Treballador</option>
+        </select>
+      </div>
+      <div><span className="label">Preu/hora (€)</span><input type="number" step="0.5" className="input" value={form.hourlyRate} onChange={e => setForm(f => ({ ...f, hourlyRate: e.target.value }))} /></div>
+      <div><span className="label">Preu dieta (€/dia)</span><input type="number" step="0.5" className="input" value={form.dietaRate} onChange={e => setForm(f => ({ ...f, dietaRate: e.target.value }))} /></div>
+      <div><span className="label">Preu desplaçament (€/dia)</span><input type="number" step="0.5" className="input" value={form.desplacamentRate} onChange={e => setForm(f => ({ ...f, desplacamentRate: e.target.value }))} /></div>
+      <div>
+        <span className="label">Obres assignades</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {[...obres].sort((a, b) => a.name.localeCompare(b.name, 'ca')).map(o => (
+            <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+              <input type="checkbox" checked={form.obraIds.includes(o.id)} onChange={() => toggleObra(o.id)} /> {o.name}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { setEditingId(null); setShowNew(false); }}>Cancel·la</button>
+        <button className="btn btn-primary" style={{ flex: 1 }} onClick={save}>Desa</button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="content-inner" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1395,9 +1523,9 @@ function PersonalView({ workers, obres, onSave, onImport }) {
         Columnes esperades: <strong>Nom, PIN, Rol, Preu hora, Preu dieta, Preu desplaçament, Obres</strong> (Obres separades per comes, amb el mateix nom que a l'apartat Obres).
       </div>
 
-      {(showNew || editingId) && (
+      {showNew && (
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 480 }}>
-          <div style={{ fontWeight: 800 }}>{editingId ? 'Edita treballador' : 'Nou treballador'}</div>
+          <div style={{ fontWeight: 800 }}>Nou treballador</div>
           <div><span className="label">Nom complet</span><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
           <div>
             <span className="label">PIN (4 dígits)</span>
@@ -1407,9 +1535,9 @@ function PersonalView({ workers, obres, onSave, onImport }) {
           <div>
             <span className="label">Rol</span>
             <select className="select" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-              <option value="treballador">Treballador</option>
-              <option value="encarregat">Encarregat</option>
               <option value="cap_obra">Cap d'obra</option>
+              <option value="encarregat">Encarregat</option>
+              <option value="treballador">Treballador</option>
             </select>
           </div>
           <div><span className="label">Preu/hora (€)</span><input type="number" step="0.5" className="input" value={form.hourlyRate} onChange={e => setForm(f => ({ ...f, hourlyRate: e.target.value }))} /></div>
@@ -1418,7 +1546,7 @@ function PersonalView({ workers, obres, onSave, onImport }) {
           <div>
             <span className="label">Obres assignades</span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {obres.map(o => (
+              {[...obres].sort((a, b) => a.name.localeCompare(b.name, 'ca')).map(o => (
                 <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
                   <input type="checkbox" checked={form.obraIds.includes(o.id)} onChange={() => toggleObra(o.id)} /> {o.name}
                 </label>
@@ -1436,23 +1564,29 @@ function PersonalView({ workers, obres, onSave, onImport }) {
         <span className="label">Filtra per obra assignada</span>
         <select className="select" style={{ maxWidth: 320 }} value={obraFilter} onChange={e => setObraFilter(e.target.value)}>
           <option value="totes">Totes les obres</option>
-          {obres.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          {[...obres].sort((a, b) => a.name.localeCompare(b.name, 'ca')).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 12 }}>
         {visibleWorkers.map(w => (
-          <div key={w.id} className="card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-              <div style={{ fontWeight: 800 }}>{w.name}</div>
-              <span className={`badge ${w.role === 'cap_obra' ? 'badge-terracotta' : w.role === 'encarregat' ? 'badge-olive' : 'badge-neutral'}`}>{ROLE_LABEL[w.role]}</span>
+          <React.Fragment key={w.id}>
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ fontWeight: 800 }}>{w.name}</div>
+                <span className={`badge ${w.role === 'cap_obra' ? 'badge-terracotta' : w.role === 'encarregat' ? 'badge-olive' : 'badge-neutral'}`}>{ROLE_LABEL[w.role]}</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#8a8478', marginTop: 4 }}>{fmtMoney(w.hourlyRate)}/h · Dieta {fmtMoney(w.dietaRate || 0)} · Desp. {fmtMoney(w.desplacamentRate || 0)}</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                {w.obraIds.map(oid => { const o = obres.find(x => x.id === oid); return o ? <span key={oid} className="chip">{o.name}</span> : null; })}
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button className="btn btn-ghost" onClick={() => startEdit(w)}><Pencil size={14} /> Edita</button>
+                <button className="btn btn-danger" onClick={() => remove(w)}><X size={14} /> Elimina</button>
+              </div>
             </div>
-            <div style={{ fontSize: 12, color: '#8a8478', marginTop: 4 }}>{fmtMoney(w.hourlyRate)}/h · Dieta {fmtMoney(w.dietaRate || 0)} · Desp. {fmtMoney(w.desplacamentRate || 0)}</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-              {w.obraIds.map(oid => { const o = obres.find(x => x.id === oid); return o ? <span key={oid} className="chip">{o.name}</span> : null; })}
-            </div>
-            <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => startEdit(w)}><Pencil size={14} /> Edita</button>
-          </div>
+            {editingId === w.id && <EditForm />}
+          </React.Fragment>
         ))}
         {visibleWorkers.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>Cap treballador amb aquest filtre.</div>}
       </div>
@@ -1461,9 +1595,9 @@ function PersonalView({ workers, obres, onSave, onImport }) {
 }
 
 /* ============================= Sol·licituds admin (cap d'obra) ============================= */
-function SolicitudsAdminView({ workers, solicituds, fitxatges, onDecision }) {
+function SolicitudsAdminView({ workers, obres, solicituds, fitxatges, onDecision }) {
   const [tab, setTab] = useState('pendents');
-  const withNames = solicituds.map(s => ({ ...s, workerName: workers.find(w => w.id === s.workerId)?.name || '—' })).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  const withNames = solicituds.map(s => ({ ...s, workerName: workers.find(w => w.id === s.workerId)?.name || '—', obraName: s.obraId ? (obres.find(o => o.id === s.obraId)?.name || '') : '' })).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   const list = tab === 'pendents' ? withNames.filter(s => s.status === 'pendent') : withNames;
   const baixes = fitxatges.filter(f => f.baixa).map(f => ({ ...f, workerName: workers.find(w => w.id === f.workerId)?.name || '—' })).sort((a, b) => b.date.localeCompare(a.date));
 
@@ -1484,6 +1618,7 @@ function SolicitudsAdminView({ workers, solicituds, fitxatges, onDecision }) {
                 <div>
                   <div style={{ fontWeight: 700 }}>{s.workerName} · {s.type === 'vacances' ? 'Vacances' : 'Permís'}</div>
                   <div style={{ fontSize: 12, color: '#8a8478' }}>{fmtDate(s.dateFrom)} — {fmtDate(s.dateTo)}</div>
+                  {s.obraName && <div style={{ fontSize: 12, color: '#8a8478' }}>{s.obraName}</div>}
                 </div>
                 <span className={`badge ${s.status === 'aprovada' ? 'badge-success' : s.status === 'rebutjada' ? 'badge-danger' : 'badge-warning'}`}>
                   {s.status === 'aprovada' ? 'Aprovada' : s.status === 'rebutjada' ? 'Rebutjada' : 'Pendent'}
@@ -1519,7 +1654,7 @@ function SolicitudsAdminView({ workers, solicituds, fitxatges, onDecision }) {
 }
 
 /* ============================= Calendari (cap d'obra) ============================= */
-function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, onSetPla, onDeletePla }) {
+function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, onSetPla, onDeletePla, onAssignRange }) {
   const [mode, setMode] = useState('worker');
   const sortedWorkers = [...workers].filter(w => w.role !== 'cap_obra').sort((a, b) => a.name.localeCompare(b.name, 'ca'));
   const sortedObres = [...obres].sort((a, b) => a.name.localeCompare(b.name, 'ca'));
@@ -1528,6 +1663,21 @@ function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, on
   const [ym, setYm] = useState(todayISO().slice(0, 7));
   const [selectedDate, setSelectedDate] = useState(null);
   const [editObraId, setEditObraId] = useState('');
+
+  const [assignWorkerId, setAssignWorkerId] = useState('');
+  const [assignObraId, setAssignObraId] = useState('');
+  const [assignFrom, setAssignFrom] = useState(todayISO());
+  const [assignTo, setAssignTo] = useState(todayISO());
+  const [assignMsg, setAssignMsg] = useState('');
+
+  const doAssign = () => {
+    if (!assignWorkerId || !assignObraId || !assignFrom || !assignTo) return;
+    onAssignRange(assignWorkerId, assignObraId, assignFrom, assignTo);
+    const w = workers.find(x => x.id === assignWorkerId);
+    setAssignMsg(`Assignat: ${w?.name || ''} a partir del ${fmtDate(assignFrom)}.`);
+    setAssignWorkerId(''); setAssignObraId(''); setAssignFrom(todayISO()); setAssignTo(todayISO());
+    setTimeout(() => setAssignMsg(''), 4000);
+  };
 
   const weeks = buildMonthGrid(ym);
   const today = todayISO();
@@ -1540,7 +1690,7 @@ function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, on
   };
 
   const worker = workers.find(w => w.id === selectedWorkerId);
-  const workerObres = worker ? obres.filter(o => worker.obraIds.includes(o.id)) : [];
+  const workerObres = worker ? obres.filter(o => worker.obraIds.includes(o.id)).sort((a, b) => a.name.localeCompare(b.name, 'ca')) : [];
 
   const infoForWorkerDay = (date) => {
     if (date <= today) return getWorkerDayInfo(selectedWorkerId, date, fitxatges, solicituds);
@@ -1593,6 +1743,37 @@ function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, on
 
   return (
     <div className="content-inner" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontWeight: 800 }}>Assigna personal a una obra</div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 180px' }}>
+            <span className="label">Treballador</span>
+            <select className="select" value={assignWorkerId} onChange={e => setAssignWorkerId(e.target.value)}>
+              <option value="">Selecciona…</option>
+              {sortedWorkers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: '1 1 180px' }}>
+            <span className="label">Obra d'assignació</span>
+            <select className="select" value={assignObraId} onChange={e => setAssignObraId(e.target.value)}>
+              <option value="">Selecciona…</option>
+              {sortedObres.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: '1 1 140px' }}>
+            <span className="label">Data d'inici</span>
+            <input type="date" className="input" value={assignFrom} onChange={e => { setAssignFrom(e.target.value); if (e.target.value > assignTo) setAssignTo(e.target.value); }} />
+          </div>
+          <div style={{ flex: '1 1 140px' }}>
+            <span className="label">Data final</span>
+            <input type="date" className="input" value={assignTo} min={assignFrom} onChange={e => setAssignTo(e.target.value)} />
+          </div>
+        </div>
+        <button className="btn btn-primary" style={{ alignSelf: 'flex-start' }} disabled={!assignWorkerId || !assignObraId || !assignFrom || !assignTo} onClick={doAssign}>Assigna</button>
+        {assignMsg && <div style={{ fontSize: 12, color: BRAND.olive, fontWeight: 600 }}>{assignMsg}</div>}
+        <div style={{ fontSize: 11, color: '#8a8478' }}>Es notificarà al treballador i quedarà marcat al seu calendari personal per als dies indicats.</div>
+      </div>
+
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div>
           <span className="label">Mostra per</span>
@@ -1887,6 +2068,35 @@ function App() {
     setPlanificacio(prev => prev.filter(p => p.id !== id));
   };
 
+  // Assignació per rang de dates des del Calendari: crea/actualitza una
+  // fila de planificació per a cada dia del rang, dona accés a l'obra al
+  // treballador si encara no hi era assignat, i el notifica.
+  const handleAssignRange = async (workerId, obraId, dateFrom, dateTo) => {
+    const dates = [];
+    let d = new Date(dateFrom + 'T00:00:00');
+    const end = new Date(dateTo + 'T00:00:00');
+    while (d <= end) { dates.push(toLocalISODate(d)); d.setDate(d.getDate() + 1); }
+    if (dates.length === 0) return;
+
+    const rows = dates.map(date => ({ worker_id: workerId, date, obra_id: obraId }));
+    const { data, error } = await supabaseClient.from('planificacio').upsert(rows, { onConflict: 'worker_id,date' }).select();
+    if (error) { console.error(error); return; }
+    const saved = data.map(planFromRow);
+    setPlanificacio(prev => {
+      const savedDates = new Set(saved.map(p => p.date));
+      return [...prev.filter(p => !(p.workerId === workerId && savedDates.has(p.date))), ...saved];
+    });
+
+    const w = workers.find(x => x.id === workerId);
+    if (w && !w.obraIds.includes(obraId)) {
+      await handleWorkerSave({ ...w, obraIds: [...w.obraIds, obraId] });
+    }
+
+    const obra = obres.find(o => o.id === obraId);
+    const encarregatNames = workers.filter(x => x.role === 'encarregat' && x.obraIds.includes(obraId)).map(x => x.name).join(', ') || 'sense encarregat assignat';
+    notify(workerId, `Se t'ha assignat a l'obra "${obra?.name || ''}" a partir del ${fmtDate(dateFrom)}. Encarregat: ${encarregatNames}. Cap d'obra: ${user?.name || ''}.`, 'historial');
+  };
+
   const handleObraSave = async (obra) => {
     const isNew = !obres.some(o => o.id === obra.id);
     const row = { ...obraToRow(obra), id: obra.id || uid() };
@@ -1894,6 +2104,27 @@ function App() {
     if (error) { console.error(error); return; }
     const saved = obraFromRow(data);
     setObres(prev => isNew ? [...prev, saved] : prev.map(o => o.id === saved.id ? saved : o));
+  };
+
+  // Eliminar una obra esborra en cascada (a la base de dades) les
+  // assignacions de centre de cost i l'assistència d'aquella obra, i deixa
+  // sense obra els fitxatges/planificacions que hi feien referència. També
+  // netegem la referència dins obra_ids de cada treballador afectat, ja que
+  // aquesta columna és un array sense clau forana pròpia.
+  const handleObraDelete = async (id) => {
+    const { error } = await supabaseClient.from('obres').delete().eq('id', id);
+    if (error) { console.error(error); return; }
+    setObres(prev => prev.filter(o => o.id !== id));
+    setAssignacionsCC(prev => prev.filter(a => a.obraId !== id));
+    setAssistencia(prev => prev.filter(a => a.obraId !== id));
+    setFitxatges(prev => prev.map(f => f.obraId === id ? { ...f, obraId: null } : f));
+    setPlanificacio(prev => prev.map(p => p.obraId === id ? { ...p, obraId: null } : p));
+    const affected = workers.filter(w => w.obraIds.includes(id));
+    for (const w of affected) {
+      const newObraIds = w.obraIds.filter(x => x !== id);
+      await supabaseClient.from('workers').update({ obra_ids: newObraIds }).eq('id', w.id);
+    }
+    setWorkers(prev => prev.map(w => w.obraIds.includes(id) ? { ...w, obraIds: w.obraIds.filter(x => x !== id) } : w));
   };
 
   const handleRoleChange = (w, prevRole) => {
@@ -1910,6 +2141,21 @@ function App() {
     const prevWorker = workers.find(x => x.id === saved.id);
     setWorkers(prev => (isNew ? [...prev, saved] : prev.map(x => x.id === saved.id ? saved : x)).sort((a, b) => a.name.localeCompare(b.name, 'ca')));
     if (prevWorker && prevWorker.role !== saved.role) handleRoleChange(saved, prevWorker.role);
+  };
+
+  // Eliminar un treballador esborra en cascada (a la base de dades) el seu
+  // historial de fitxatges, sol·licituds, assistència, planificació i
+  // notificacions. És una acció irreversible; la confirmació es demana a
+  // la interfície abans de cridar aquesta funció.
+  const handleWorkerDelete = async (id) => {
+    const { error } = await supabaseClient.from('workers').delete().eq('id', id);
+    if (error) { console.error(error); return; }
+    setWorkers(prev => prev.filter(w => w.id !== id));
+    setFitxatges(prev => prev.filter(f => f.workerId !== id));
+    setSolicituds(prev => prev.filter(s => s.workerId !== id));
+    setAssistencia(prev => prev.filter(a => a.workerId !== id));
+    setPlanificacio(prev => prev.filter(p => p.workerId !== id));
+    setNotificacions(prev => prev.filter(n => n.workerId !== id));
   };
 
   const handleWorkersImport = async (list) => {
@@ -1956,12 +2202,12 @@ function App() {
   const navItems = {
     treballador: [
       { key: 'fitxatge', label: 'Fitxatge', icon: Clock },
-      { key: 'historial', label: 'Historial', icon: History },
+      { key: 'historial', label: 'Calendari', icon: Calendar },
       { key: 'solicituds', label: 'Sol·licituds', icon: FileText },
     ],
     encarregat: [
       { key: 'fitxatge', label: 'Fitxatge', icon: Clock },
-      { key: 'historial', label: 'Historial', icon: History },
+      { key: 'historial', label: 'Calendari', icon: Calendar },
       { key: 'centres', label: 'Centres', icon: Briefcase },
       { key: 'assistencia', label: 'Assistència', icon: Users },
       { key: 'solicituds', label: 'Sol·licituds', icon: FileText },
@@ -1978,22 +2224,22 @@ function App() {
   const renderContent = () => {
     if (user.role === 'treballador') {
       if (tab === 'fitxatge') return <FitxatgeView user={user} obres={obres} fitxatges={fitxatges} onSave={handleFitxatgeSave} onDelete={handleFitxatgeDelete} />;
-      if (tab === 'historial') return <HistorialView user={user} obres={obres} fitxatges={fitxatges} />;
-      if (tab === 'solicituds') return <SolicitudsView user={user} solicituds={solicituds} onCreate={handleSolicitudCreate} onUpdate={handleSolicitudUpdate} />;
+      if (tab === 'historial') return <HistorialView user={user} obres={obres} fitxatges={fitxatges} solicituds={solicituds} planificacio={planificacio} />;
+      if (tab === 'solicituds') return <SolicitudsView user={user} obres={obres} solicituds={solicituds} onCreate={handleSolicitudCreate} onUpdate={handleSolicitudUpdate} />;
     }
     if (user.role === 'encarregat') {
       if (tab === 'fitxatge') return <FitxatgeView user={user} obres={obres} fitxatges={fitxatges} onSave={handleFitxatgeSave} onDelete={handleFitxatgeDelete} />;
-      if (tab === 'historial') return <HistorialView user={user} obres={obres} fitxatges={fitxatges} />;
+      if (tab === 'historial') return <HistorialView user={user} obres={obres} fitxatges={fitxatges} solicituds={solicituds} planificacio={planificacio} />;
       if (tab === 'centres') return <CostCenterView user={user} obres={obres} workers={workers} assignacionsCC={assignacionsCC} onSave={handleAssignacioCC} />;
       if (tab === 'assistencia') return <AssistenciaView user={user} obres={obres} workers={workers} fitxatges={fitxatges} solicituds={solicituds} assistencia={assistencia} onMark={handleMarkAssistencia} onSaveHores={handleFitxatgeSave} />;
-      if (tab === 'solicituds') return <SolicitudsView user={user} solicituds={solicituds} onCreate={handleSolicitudCreate} onUpdate={handleSolicitudUpdate} />;
+      if (tab === 'solicituds') return <SolicitudsView user={user} obres={obres} solicituds={solicituds} onCreate={handleSolicitudCreate} onUpdate={handleSolicitudUpdate} />;
     }
     if (user.role === 'cap_obra') {
       if (tab === 'resum') return <ResumView obres={obres} workers={workers} fitxatges={fitxatges} assistencia={assistencia} assignacionsCC={assignacionsCC} />;
-      if (tab === 'calendari') return <CalendariView workers={workers} obres={obres} fitxatges={fitxatges} solicituds={solicituds} planificacio={planificacio} onSetPla={handleSetPla} onDeletePla={handleDeletePla} />;
-      if (tab === 'obres') return <ObresView obres={obres} onSave={handleObraSave} />;
-      if (tab === 'personal') return <PersonalView workers={workers} obres={obres} onSave={handleWorkerSave} onImport={handleWorkersImport} />;
-      if (tab === 'solicituds_admin') return <SolicitudsAdminView workers={workers} solicituds={solicituds} fitxatges={fitxatges} onDecision={handleSolicitudDecision} />;
+      if (tab === 'calendari') return <CalendariView workers={workers} obres={obres} fitxatges={fitxatges} solicituds={solicituds} planificacio={planificacio} onSetPla={handleSetPla} onDeletePla={handleDeletePla} onAssignRange={handleAssignRange} />;
+      if (tab === 'obres') return <ObresView obres={obres} onSave={handleObraSave} onDelete={handleObraDelete} />;
+      if (tab === 'personal') return <PersonalView workers={workers} obres={obres} onSave={handleWorkerSave} onDelete={handleWorkerDelete} onImport={handleWorkersImport} />;
+      if (tab === 'solicituds_admin') return <SolicitudsAdminView workers={workers} obres={obres} solicituds={solicituds} fitxatges={fitxatges} onDecision={handleSolicitudDecision} />;
     }
     return null;
   };

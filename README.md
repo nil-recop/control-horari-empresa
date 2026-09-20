@@ -158,6 +158,15 @@ alter default privileges in schema public grant select, insert, update, delete o
 alter default privileges in schema public grant usage, select on sequences to anon, authenticated;
 ```
 
+## Actualització necessària a la base de dades (obra obligatòria a les vacances)
+
+Les sol·licituds de vacances ara indiquen l'obra. Executa això una sola
+vegada al SQL Editor:
+
+```sql
+alter table solicituds add column if not exists obra_id uuid references obres(id) on delete set null;
+```
+
 ## Resolució de problemes
 
 **"Could not find the table 'public.workers' in the schema cache"**
