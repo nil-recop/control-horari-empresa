@@ -167,6 +167,35 @@ vegada al SQL Editor:
 alter table solicituds add column if not exists obra_id uuid references obres(id) on delete set null;
 ```
 
+## Actualització necessària a la base de dades (baixa lògica de personal + preus congelats)
+
+El personal ja no s'elimina (per no perdre l'historial): es marca com a
+inactiu. I els preus (hora/dieta/desplaçament) queden congelats al
+fitxatge del moment, perquè un canvi de preu no alteri el cost d'hores ja
+registrades. Executa això una sola vegada al SQL Editor:
+
+```sql
+alter table workers add column if not exists active boolean not null default true;
+
+alter table fitxatges add column if not exists hourly_rate numeric;
+alter table fitxatges add column if not exists dieta_rate numeric;
+alter table fitxatges add column if not exists desplacament_rate numeric;
+```
+
+**Opcional però recomanat**: per "congelar" també els fitxatges que ja
+existien abans d'aquest canvi (si no ho fas, l'aplicació seguirà
+funcionant igualment, ja que fa servir el preu actual del treballador com
+a reserva per a aquests registres antics):
+
+```sql
+update fitxatges f
+set hourly_rate = w.hourly_rate,
+    dieta_rate = w.dieta_rate,
+    desplacament_rate = w.desplacament_rate
+from workers w
+where f.worker_id = w.id and f.hourly_rate is null;
+```
+
 ## Resolució de problemes
 
 **"Could not find the table 'public.workers' in the schema cache"**
