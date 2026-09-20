@@ -52,6 +52,7 @@ create table if not exists solicituds (
   date_from date not null,
   date_to date not null,
   comment text default '',
+  obra_id uuid references obres(id) on delete set null,
   file_name text,
   file_path text,
   status text not null default 'pendent' check (status in ('pendent','aprovada','rebutjada')),
