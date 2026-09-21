@@ -1725,6 +1725,9 @@ function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, on
             <select className="select" value={assignObraId} onChange={e => setAssignObraId(e.target.value)}>
               <option value="">Selecciona…</option>
               {sortedObres.filter(o => o.active).map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: '1 1 140px' }}>
             <span className="label">Data d'inici</span>
             <input type="date" className="input" value={assignFrom} onChange={e => { setAssignFrom(e.target.value); if (e.target.value > assignTo) setAssignTo(e.target.value); }} />
           </div>
