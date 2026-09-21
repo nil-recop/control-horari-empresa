@@ -1198,15 +1198,67 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
   const ccTotalHours = ccRows.reduce((s, r) => s + r.hours, 0);
   const ccCols = obraFilter === 'totes' ? 4 : 3;
 
+  // Tercera taula: assistència real marcada per l'encarregat (present/absent)
+  // creuada amb les hores que s'hagin fitxat aquell mateix dia i obra.
+  const byAssist = {};
+  relevantAssistencia.forEach(a => {
+    const w = workers.find(x => x.id === a.workerId);
+    if (!w) return;
+    const key = obraFilter === 'totes' ? `${w.id}|${a.obraId}` : w.id;
+    if (!byAssist[key]) {
+      const o = obres.find(x => x.id === a.obraId);
+      byAssist[key] = { name: w.name, obraName: obraFilter === 'totes' ? (o?.name || '—') : null, present: 0, absent: 0, hours: 0, cost: 0 };
+    }
+    if (a.present) {
+      byAssist[key].present += 1;
+      const fit = fitxatges.find(f => f.workerId === a.workerId && f.date === a.date && f.obraId === a.obraId && !f.baixa);
+      if (fit) {
+        const hrs = Number(fit.hours) || 0;
+        const rate = fit.hourlyRate != null ? Number(fit.hourlyRate) : (w.hourlyRate || 0);
+        byAssist[key].hours += hrs;
+        byAssist[key].cost += hrs * rate;
+      }
+    } else {
+      byAssist[key].absent += 1;
+    }
+  });
+  const assistRows = Object.values(byAssist).sort((a, b) => a.name.localeCompare(b.name, 'ca') || (a.obraName || '').localeCompare(b.obraName || '', 'ca'));
+  const assistTotalHours = assistRows.reduce((s, r) => s + r.hours, 0);
+  const assistTotalCost = assistRows.reduce((s, r) => s + r.cost, 0);
+  const assistCols = obraFilter === 'totes' ? 6 : 5;
+
+  // Crea un full amb columnes Hores / Preu-hora / Cost on el Cost és una
+  // fórmula d'Excel (Hores*Preu) en lloc d'un valor fix, tal com es demana
+  // perquè els valors diaris quedin "formulats".
+  const sheetWithCostFormula = (header, rows2d, hoursIdx, rateIdx, costIdx) => {
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows2d]);
+    const hoursCol = XLSX.utils.encode_col(hoursIdx);
+    const rateCol = XLSX.utils.encode_col(rateIdx);
+    const costCol = XLSX.utils.encode_col(costIdx);
+    rows2d.forEach((r, i) => {
+      const rowNum = i + 2;
+      ws[`${costCol}${rowNum}`] = { t: 'n', f: `${hoursCol}${rowNum}*${rateCol}${rowNum}` };
+    });
+    return ws;
+  };
+
   const exportExcel = () => {
-    const fitxData = relevantFitxatges.map(f => {
+    const fitxHeader = ['Data', 'Treballador', 'Obra', 'Hores', "Preu/hora (€)", 'Cost (€)', 'Dieta', 'Desplaçament', 'Comentari'];
+    const fitxRows2d = relevantFitxatges.map(f => {
       const w = workers.find(x => x.id === f.workerId); const o = obres.find(x => x.id === f.obraId);
-      return { Data: f.date, Treballador: w?.name || '', Obra: o?.name || '', Hores: f.hours, Dieta: f.dieta ? 'Sí' : 'No', Desplaçament: f.desplacament ? 'Sí' : 'No', Comentari: f.comment || '' };
+      const rate = f.hourlyRate != null ? Number(f.hourlyRate) : (w?.hourlyRate || 0);
+      return [f.date, w?.name || '', o?.name || '', Number(f.hours) || 0, rate, 0, f.dieta ? 'Sí' : 'No', f.desplacament ? 'Sí' : 'No', f.comment || ''];
     });
-    const assistData = relevantAssistencia.map(a => {
+
+    const assistHeader = ['Data', 'Treballador', 'Obra', 'Estat', 'Hores', "Preu/hora (€)", 'Cost (€)'];
+    const assistRows2d = relevantAssistencia.map(a => {
       const w = workers.find(x => x.id === a.workerId); const o = obres.find(x => x.id === a.obraId);
-      return { Data: a.date, Treballador: w?.name || '', Obra: o?.name || '', Estat: a.present ? 'Present' : 'Absent' };
+      const fit = a.present ? fitxatges.find(f => f.workerId === a.workerId && f.date === a.date && f.obraId === a.obraId && !f.baixa) : null;
+      const hours = fit ? (Number(fit.hours) || 0) : 0;
+      const rate = fit?.hourlyRate != null ? Number(fit.hourlyRate) : (w?.hourlyRate || 0);
+      return [a.date, w?.name || '', o?.name || '', a.present ? 'Present' : 'Absent', hours, rate, 0];
     });
+
     const ccData = [];
     relevantCC.forEach(a => {
       const o = obres.find(x => x.id === a.obraId); const cc = o?.costCenters.find(c => c.id === a.costCenterId);
@@ -1218,12 +1270,14 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
     });
     const resumData = rows.map(r => ({ Treballador: r.name, Obra: r.obraName || '', Hores: r.hours, "Mà d'obra (€)": r.laborCost, 'Dietes (€)': r.dietaCost, 'Desplaçaments (€)': r.despCost, 'Total (€)': r.total }));
     const ccResumData = ccRows.map(r => ({ 'Centre de cost': r.name, Obra: r.obraName, Hores: r.hours, Treballadors: r.workerCount }));
+    const assistResumData = assistRows.map(r => ({ Treballador: r.name, Obra: r.obraName || '', Presents: r.present, Absents: r.absent, Hores: r.hours, 'Cost (€)': r.cost }));
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumData), 'Resum');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ccResumData), 'Hores per centre de cost');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fitxData), 'Fitxatges');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(assistData), 'Assistencia');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(assistResumData), 'Resum assistència');
+    XLSX.utils.book_append_sheet(wb, sheetWithCostFormula(fitxHeader, fitxRows2d, 3, 4, 5), 'Fitxatges');
+    XLSX.utils.book_append_sheet(wb, sheetWithCostFormula(assistHeader, assistRows2d, 4, 5, 6), 'Assistencia');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ccData), 'Centres de cost');
     XLSX.writeFile(wb, `recop_dades_${range ? range.join('_a_') : 'global'}.xlsx`);
   };
@@ -1282,10 +1336,27 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
         </table>
       </div>
 
+      <div className="card" style={{ overflowX: 'auto' }}>
+        <div style={{ fontWeight: 800, marginBottom: 10 }}>Assistència i hores marcades</div>
+        <table className="recop-table">
+          <thead><tr><th>Treballador</th>{obraFilter === 'totes' && <th>Obra</th>}<th>Presents</th><th>Absents</th><th>Hores</th><th>Cost</th></tr></thead>
+          <tbody>
+            {assistRows.map((r, i) => (
+              <tr key={i}><td>{r.name}</td>{obraFilter === 'totes' && <td>{r.obraName}</td>}<td>{r.present}</td><td>{r.absent}</td><td>{r.hours}</td><td>{fmtMoney(r.cost)}</td></tr>
+            ))}
+            {assistRows.length === 0 && <tr><td colSpan={assistCols} style={{ color: '#8a8478', textAlign: 'center', padding: 16 }}>Sense assistència marcada per aquest període.</td></tr>}
+          </tbody>
+          {assistRows.length > 0 && (
+            <tfoot><tr className="total-row"><td>Total</td>{obraFilter === 'totes' && <td />}<td /><td /><td>{assistTotalHours}</td><td>{fmtMoney(assistTotalCost)}</td></tr></tfoot>
+          )}
+        </table>
+        <div style={{ fontSize: 11, color: '#8a8478', marginTop: 8 }}>Presents/absents = marcats manualment per l'encarregat a Assistència. Hores i cost = fitxatge d'aquell mateix dia i obra (0 si encara no s'han desat).</div>
+      </div>
+
       <div className="card">
         <div style={{ fontWeight: 800, marginBottom: 10 }}>Exportar dades</div>
         <button className="btn btn-outline" onClick={exportExcel}><Download size={14} /> Exporta a Excel (.xlsx)</button>
-        <div style={{ fontSize: 12, color: '#8a8478', marginTop: 8 }}>Inclou pestanyes de Resum, Hores per centre de cost, Fitxatges, Assistència i Centres de cost pel període i obra seleccionats — llest per a taules dinàmiques.</div>
+        <div style={{ fontSize: 12, color: '#8a8478', marginTop: 8 }}>Inclou pestanyes de Resum, Hores per centre de cost, Resum assistència, Fitxatges, Assistència i Centres de cost pel període i obra seleccionats — llest per a taules dinàmiques. Els costos diaris de Fitxatges i Assistència s'exporten com a fórmules (Hores × Preu/hora).</div>
       </div>
     </div>
   );
