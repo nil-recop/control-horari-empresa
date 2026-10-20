@@ -191,8 +191,8 @@ function buildMonthGrid(ym) {
 const ROLE_LABEL = { treballador: 'Treballador', encarregat: 'Encarregat', cap_obra: "Cap d'obra" };
 
 /* ============================= DB <-> app mappers ============================= */
-const workerFromRow = (r) => ({ id: r.id, name: r.name, pin: r.pin, role: r.role, active: r.active !== false, hourlyRate: r.hourly_rate, dietaRate: r.dieta_rate, desplacamentRate: r.desplacament_rate, obraIds: r.obra_ids || [] });
-const workerToRow = (w) => ({ id: w.id, name: w.name, pin: w.pin, role: w.role, active: w.active !== false, hourly_rate: Number(w.hourlyRate) || 0, dieta_rate: Number(w.dietaRate) || 0, desplacament_rate: Number(w.desplacamentRate) || 0, obra_ids: w.obraIds || [] });
+const workerFromRow = (r) => ({ id: r.id, name: r.name, pin: r.pin, role: r.role, active: r.active !== false, external: r.external === true, company: r.company || '', position: r.position || '', hourlyRate: r.hourly_rate, dietaRate: r.dieta_rate, desplacamentRate: r.desplacament_rate, obraIds: r.obra_ids || [] });
+const workerToRow = (w) => ({ id: w.id, name: w.name, pin: w.pin || '', role: w.role, active: w.active !== false, external: !!w.external, company: w.external ? (w.company || null) : null, position: w.external ? (w.position || null) : null, hourly_rate: Number(w.hourlyRate) || 0, dieta_rate: Number(w.dietaRate) || 0, desplacament_rate: Number(w.desplacamentRate) || 0, obra_ids: w.obraIds || [] });
 
 const obraFromRow = (r) => ({ id: r.id, name: r.name, address: r.address, active: r.active, costCenters: r.cost_centers || [] });
 const obraToRow = (o) => ({ id: o.id, name: o.name, address: o.address, active: o.active, cost_centers: o.costCenters || [] });
@@ -312,7 +312,7 @@ function LoginScreen({ workers, onLogin }) {
   const [selected, setSelected] = useState(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
-  const sortedWorkers = [...workers].sort((a, b) => a.name.localeCompare(b.name, 'ca'));
+  const sortedWorkers = [...workers].filter(w => !w.external).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
 
   const attempt = (code) => {
     if (!selected) return;
@@ -1023,7 +1023,7 @@ function CostCenterView({ user, obres, workers, assignacionsCC, onSave }) {
             {obraWorkers.map(w => (
               <label key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid #e7e2d8', borderRadius: 8 }}>
                 <input type="checkbox" checked={selectedWorkers.includes(w.id)} onChange={() => toggleWorker(w.id)} />
-                <span style={{ fontWeight: 600, fontSize: 14 }}>{w.name}</span>
+                <span style={{ fontWeight: 600, fontSize: 14 }}>{w.name}{w.external && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Extern{w.company ? ` · ${w.company}` : ''}</span>}</span>
               </label>
             ))}
             {obraWorkers.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>No hi ha personal assignat a aquesta obra.</div>}
@@ -1076,7 +1076,7 @@ function AssistenciaRow({ worker, date, obraId, fitxatges, solicituds, assistenc
   return (
     <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, gap: 10, flexWrap: 'wrap' }}>
       <div>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>{worker.name}</div>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>{worker.name}{worker.external && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Extern{worker.company ? ` · ${worker.company}` : ''}</span>}</div>
         <span className={`badge ${badgeClass(st.kind)}`}>{st.label}</span>
       </div>
       {!locked && (
@@ -1159,7 +1159,7 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
     const key = obraFilter === 'totes' ? `${w.id}|${f.obraId}` : w.id;
     if (!byKey[key]) {
       const o = obres.find(x => x.id === f.obraId);
-      byKey[key] = { name: w.name, obraName: obraFilter === 'totes' ? (o?.name || '—') : null, hours: 0, laborCost: 0, dietaCost: 0, despCost: 0 };
+      byKey[key] = { name: w.name, external: !!w.external, company: w.company || '', obraName: obraFilter === 'totes' ? (o?.name || '—') : null, hours: 0, laborCost: 0, dietaCost: 0, despCost: 0 };
     }
     // El preu es pren del propi fitxatge (congelat en el moment de crear-lo);
     // si és un registre antic sense preu desat, es fa servir el preu actual
@@ -1209,7 +1209,7 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
     const key = obraFilter === 'totes' ? `${w.id}|${a.obraId}` : w.id;
     if (!byAssist[key]) {
       const o = obres.find(x => x.id === a.obraId);
-      byAssist[key] = { name: w.name, obraName: obraFilter === 'totes' ? (o?.name || '—') : null, present: 0, absent: 0, hours: 0, cost: 0 };
+      byAssist[key] = { name: w.name, external: !!w.external, company: w.company || '', obraName: obraFilter === 'totes' ? (o?.name || '—') : null, present: 0, absent: 0, hours: 0, cost: 0 };
     }
     if (a.present) {
       byAssist[key].present += 1;
@@ -1245,20 +1245,20 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
   };
 
   const exportExcel = () => {
-    const fitxHeader = ['Data', 'Treballador', 'Obra', 'Hores', "Preu/hora (€)", 'Cost (€)', 'Dieta', 'Desplaçament', 'Comentari'];
+    const fitxHeader = ['Data', 'Treballador', 'Obra', 'Hores', "Preu/hora (€)", 'Cost (€)', 'Dieta', 'Desplaçament', 'Comentari', 'Empresa (extern)'];
     const fitxRows2d = relevantFitxatges.map(f => {
       const w = workers.find(x => x.id === f.workerId); const o = obres.find(x => x.id === f.obraId);
       const rate = f.hourlyRate != null ? Number(f.hourlyRate) : (w?.hourlyRate || 0);
-      return [f.date, w?.name || '', o?.name || '', Number(f.hours) || 0, rate, 0, f.dieta ? 'Sí' : 'No', f.desplacament ? 'Sí' : 'No', f.comment || ''];
+      return [f.date, w?.name || '', o?.name || '', Number(f.hours) || 0, rate, 0, f.dieta ? 'Sí' : 'No', f.desplacament ? 'Sí' : 'No', f.comment || '', w?.external ? (w.company || 'Extern') : ''];
     });
 
-    const assistHeader = ['Data', 'Treballador', 'Obra', 'Estat', 'Hores', "Preu/hora (€)", 'Cost (€)'];
+    const assistHeader = ['Data', 'Treballador', 'Obra', 'Estat', 'Hores', "Preu/hora (€)", 'Cost (€)', 'Empresa (extern)'];
     const assistRows2d = relevantAssistencia.map(a => {
       const w = workers.find(x => x.id === a.workerId); const o = obres.find(x => x.id === a.obraId);
       const fit = a.present ? fitxatges.find(f => f.workerId === a.workerId && f.date === a.date && f.obraId === a.obraId && !f.baixa) : null;
       const hours = fit ? (Number(fit.hours) || 0) : 0;
       const rate = fit?.hourlyRate != null ? Number(fit.hourlyRate) : (w?.hourlyRate || 0);
-      return [a.date, w?.name || '', o?.name || '', a.present ? 'Present' : 'Absent', hours, rate, 0];
+      return [a.date, w?.name || '', o?.name || '', a.present ? 'Present' : 'Absent', hours, rate, 0, w?.external ? (w.company || 'Extern') : ''];
     });
 
     const ccData = [];
@@ -1270,9 +1270,9 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
         ccData.push({ Data: a.date, Obra: o?.name || '', 'Centre de cost': cc?.name || '', Treballador: w?.name || '', Hores: fit?.hours || 0 });
       });
     });
-    const resumData = rows.map(r => ({ Treballador: r.name, Obra: r.obraName || '', Hores: r.hours, "Mà d'obra (€)": r.laborCost, 'Dietes (€)': r.dietaCost, 'Desplaçaments (€)': r.despCost, 'Total (€)': r.total }));
+    const resumData = rows.map(r => ({ Treballador: r.name, 'Empresa (extern)': r.company || '', Obra: r.obraName || '', Hores: r.hours, "Mà d'obra (€)": r.laborCost, 'Dietes (€)': r.dietaCost, 'Desplaçaments (€)': r.despCost, 'Total (€)': r.total }));
     const ccResumData = ccRows.map(r => ({ 'Centre de cost': r.name, Obra: r.obraName, Hores: r.hours, Treballadors: r.workerCount }));
-    const assistResumData = assistRows.map(r => ({ Treballador: r.name, Obra: r.obraName || '', Presents: r.present, Absents: r.absent, Hores: r.hours, 'Cost (€)': r.cost }));
+    const assistResumData = assistRows.map(r => ({ Treballador: r.name, 'Empresa (extern)': r.company || '', Obra: r.obraName || '', Presents: r.present, Absents: r.absent, Hores: r.hours, 'Cost (€)': r.cost }));
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumData), 'Resum');
@@ -1312,7 +1312,7 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
           <thead><tr><th>Treballador</th>{obraFilter === 'totes' && <th>Obra</th>}<th>Hores</th><th>Mà d'obra</th><th>Dietes</th><th>Desplaç.</th><th>Total</th></tr></thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={i}><td>{r.name}</td>{obraFilter === 'totes' && <td>{r.obraName}</td>}<td>{r.hours}</td><td>{fmtMoney(r.laborCost)}</td><td>{fmtMoney(r.dietaCost)}</td><td>{fmtMoney(r.despCost)}</td><td>{fmtMoney(r.total)}</td></tr>
+              <tr key={i}><td>{r.name}{r.external && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Extern</span>}</td>{obraFilter === 'totes' && <td>{r.obraName}</td>}<td>{r.hours}</td><td>{fmtMoney(r.laborCost)}</td><td>{fmtMoney(r.dietaCost)}</td><td>{fmtMoney(r.despCost)}</td><td>{fmtMoney(r.total)}</td></tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={cols} style={{ color: '#8a8478', textAlign: 'center', padding: 16 }}>Sense dades per aquest període.</td></tr>}
           </tbody>
@@ -1328,7 +1328,7 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
           <thead><tr><th>Centre de cost</th>{obraFilter === 'totes' && <th>Obra</th>}<th>Hores</th><th>Treballadors</th></tr></thead>
           <tbody>
             {ccRows.map((r, i) => (
-              <tr key={i}><td>{r.name}</td>{obraFilter === 'totes' && <td>{r.obraName}</td>}<td>{r.hours}</td><td>{r.workerCount}</td></tr>
+              <tr key={i}><td>{r.name}{r.external && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Extern</span>}</td>{obraFilter === 'totes' && <td>{r.obraName}</td>}<td>{r.hours}</td><td>{r.workerCount}</td></tr>
             ))}
             {ccRows.length === 0 && <tr><td colSpan={ccCols} style={{ color: '#8a8478', textAlign: 'center', padding: 16 }}>Sense assignacions de centre de cost per aquest període.</td></tr>}
           </tbody>
@@ -1344,7 +1344,7 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
           <thead><tr><th>Treballador</th>{obraFilter === 'totes' && <th>Obra</th>}<th>Presents</th><th>Absents</th><th>Hores</th><th>Cost</th></tr></thead>
           <tbody>
             {assistRows.map((r, i) => (
-              <tr key={i}><td>{r.name}</td>{obraFilter === 'totes' && <td>{r.obraName}</td>}<td>{r.present}</td><td>{r.absent}</td><td>{r.hours}</td><td>{fmtMoney(r.cost)}</td></tr>
+              <tr key={i}><td>{r.name}{r.external && <span className="chip" style={{ marginLeft: 6, fontSize: 10 }}>Extern</span>}</td>{obraFilter === 'totes' && <td>{r.obraName}</td>}<td>{r.present}</td><td>{r.absent}</td><td>{r.hours}</td><td>{fmtMoney(r.cost)}</td></tr>
             ))}
             {assistRows.length === 0 && <tr><td colSpan={assistCols} style={{ color: '#8a8478', textAlign: 'center', padding: 16 }}>Sense assistència marcada per aquest període.</td></tr>}
           </tbody>
@@ -1454,29 +1454,43 @@ function ObresView({ obres, onSave }) {
 /* ============================= Personal (cap d'obra) ============================= */
 function WorkerForm({ title, form, setForm, obres, onSave, onCancel }) {
   const toggleObra = (oid) => setForm(f => ({ ...f, obraIds: f.obraIds.includes(oid) ? f.obraIds.filter(x => x !== oid) : [...f.obraIds, oid] }));
+  const ext = !!form.external;
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 480, gridColumn: '1 / -1' }}>
       <div style={{ fontWeight: 800 }}>{title}</div>
       <div><span className="label">Nom complet</span><input className="input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-      <div>
-        <span className="label">PIN (4 dígits)</span>
-        <input className="input" maxLength={4} value={form.pin} onChange={e => setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))} />
-        {!/^\d{4}$/.test(form.pin) && <div style={{ fontSize: 11, color: '#8a8478', marginTop: 4 }}>Ha de tenir 4 dígits.</div>}
-      </div>
-      <div>
-        <span className="label">Rol</span>
-        <select className="select" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-          <option value="cap_obra">Cap d'obra</option>
-          <option value="encarregat">Encarregat</option>
-          <option value="treballador">Treballador</option>
-        </select>
-      </div>
+      {ext ? (
+        <>
+          <div><span className="label">Empresa</span><input className="input" value={form.company || ''} onChange={e => setForm(f => ({ ...f, company: e.target.value }))} /></div>
+          <div><span className="label">Càrrec</span><input className="input" placeholder="Ex.: oficial 1a, peó, encofrador…" value={form.position || ''} onChange={e => setForm(f => ({ ...f, position: e.target.value }))} /></div>
+        </>
+      ) : (
+        <>
+          <div>
+            <span className="label">PIN (4 dígits)</span>
+            <input className="input" maxLength={4} value={form.pin} onChange={e => setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))} />
+            {!/^\d{4}$/.test(form.pin) && <div style={{ fontSize: 11, color: '#8a8478', marginTop: 4 }}>Ha de tenir 4 dígits.</div>}
+          </div>
+          <div>
+            <span className="label">Rol</span>
+            <select className="select" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+              <option value="cap_obra">Cap d'obra</option>
+              <option value="encarregat">Encarregat</option>
+              <option value="treballador">Treballador</option>
+            </select>
+          </div>
+        </>
+      )}
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 600 }}>
         <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} /> Treballador actiu
       </label>
       <div><span className="label">Preu/hora (€)</span><input type="number" step="0.5" className="input" value={form.hourlyRate} onChange={e => setForm(f => ({ ...f, hourlyRate: e.target.value }))} /></div>
-      <div><span className="label">Preu dieta (€/dia)</span><input type="number" step="0.5" className="input" value={form.dietaRate} onChange={e => setForm(f => ({ ...f, dietaRate: e.target.value }))} /></div>
-      <div><span className="label">Preu desplaçament (€/dia)</span><input type="number" step="0.5" className="input" value={form.desplacamentRate} onChange={e => setForm(f => ({ ...f, desplacamentRate: e.target.value }))} /></div>
+      {!ext && (
+        <>
+          <div><span className="label">Preu dieta (€/dia)</span><input type="number" step="0.5" className="input" value={form.dietaRate} onChange={e => setForm(f => ({ ...f, dietaRate: e.target.value }))} /></div>
+          <div><span className="label">Preu desplaçament (€/dia)</span><input type="number" step="0.5" className="input" value={form.desplacamentRate} onChange={e => setForm(f => ({ ...f, desplacamentRate: e.target.value }))} /></div>
+        </>
+      )}
       <div style={{ fontSize: 11, color: '#8a8478', marginTop: -6 }}>Els canvis de preu només afecten les hores registrades a partir d'ara; les ja fitxades mantenen el preu del moment.</div>
       <div>
         <span className="label">Obres assignades</span>
@@ -1501,9 +1515,18 @@ function WorkerCard({ w, obres, onEdit, onToggleActive }) {
     <div className="card" style={{ opacity: w.active ? 1 : 0.7 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ fontWeight: 800 }}>{w.name}</div>
-        <span className={`badge ${w.role === 'cap_obra' ? 'badge-terracotta' : w.role === 'encarregat' ? 'badge-olive' : 'badge-neutral'}`}>{ROLE_LABEL[w.role]}</span>
+        {w.external
+          ? <span className="badge badge-neutral">Extern</span>
+          : <span className={`badge ${w.role === 'cap_obra' ? 'badge-terracotta' : w.role === 'encarregat' ? 'badge-olive' : 'badge-neutral'}`}>{ROLE_LABEL[w.role]}</span>}
       </div>
-      <div style={{ fontSize: 12, color: '#8a8478', marginTop: 4 }}>{fmtMoney(w.hourlyRate)}/h · Dieta {fmtMoney(w.dietaRate || 0)} · Desp. {fmtMoney(w.desplacamentRate || 0)}</div>
+      {w.external && (w.company || w.position) && (
+        <div style={{ fontSize: 12, color: '#57524a', marginTop: 4 }}>{[w.company, w.position].filter(Boolean).join(' · ')}</div>
+      )}
+      <div style={{ fontSize: 12, color: '#8a8478', marginTop: 4 }}>
+        {w.external
+          ? <>{fmtMoney(w.hourlyRate)}/h</>
+          : <>{fmtMoney(w.hourlyRate)}/h · Dieta {fmtMoney(w.dietaRate || 0)} · Desp. {fmtMoney(w.desplacamentRate || 0)}</>}
+      </div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
         {w.obraIds.map(oid => { const o = obres.find(x => x.id === oid); return o ? <span key={oid} className="chip">{o.name}</span> : null; })}
       </div>
@@ -1521,22 +1544,30 @@ function WorkerCard({ w, obres, onEdit, onToggleActive }) {
 
 function PersonalView({ workers, obres, onSave, onImport }) {
   const blank = { id: null, name: '', pin: '', role: 'treballador', active: true, hourlyRate: 15, dietaRate: 12, desplacamentRate: 8, obraIds: [] };
+  const blankExtern = { id: null, name: '', pin: '', role: 'treballador', active: true, external: true, company: '', position: '', hourlyRate: 15, dietaRate: 0, desplacamentRate: 0, obraIds: [] };
   const [editingId, setEditingId] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [form, setForm] = useState(blank);
   const [importMsg, setImportMsg] = useState('');
   const [obraFilter, setObraFilter] = useState('totes');
 
+  const byName = (a, b) => a.name.localeCompare(b.name, 'ca');
+  const byCompanyName = (a, b) => (a.company || '').localeCompare(b.company || '', 'ca') || a.name.localeCompare(b.name, 'ca');
   const filtered = workers.filter(w => obraFilter === 'totes' || w.obraIds.includes(obraFilter));
-  const activeWorkers = filtered.filter(w => w.active !== false).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
-  const inactiveWorkers = filtered.filter(w => w.active === false).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
+  const activeWorkers = filtered.filter(w => !w.external && w.active !== false).sort(byName);
+  const inactiveWorkers = filtered.filter(w => !w.external && w.active === false).sort(byName);
+  const activeExterns = filtered.filter(w => w.external && w.active !== false).sort(byCompanyName);
+  const inactiveExterns = filtered.filter(w => w.external && w.active === false).sort(byCompanyName);
+  const externCompanies = [...new Set(activeExterns.map(w => w.company || 'Sense empresa'))];
 
   const startEdit = (w) => { setForm({ ...w, active: w.active !== false, obraIds: [...w.obraIds] }); setEditingId(w.id); setShowNew(false); };
   const startNew = () => { setForm({ ...blank, id: uid() }); setShowNew(true); setEditingId(null); };
+  const startNewExtern = () => { setForm({ ...blankExtern, id: uid() }); setShowNew(true); setEditingId(null); };
   const cancel = () => { setEditingId(null); setShowNew(false); };
 
   const save = () => {
-    if (!form.name.trim() || !/^\d{4}$/.test(form.pin)) return;
+    if (!form.name.trim()) return;
+    if (!form.external && !/^\d{4}$/.test(form.pin)) return;
     onSave(form);
     setEditingId(null); setShowNew(false); setForm(blank);
   };
@@ -1583,10 +1614,13 @@ function PersonalView({ workers, obres, onSave, onImport }) {
     setTimeout(() => setImportMsg(''), 5000);
   };
 
+  const gridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 12 };
+
   return (
     <div className="content-inner" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button className="btn btn-primary" onClick={startNew}><Plus size={16} /> Nou treballador</button>
+        <button className="btn btn-secondary" onClick={startNewExtern}><Plus size={16} /> Nou treballador extern</button>
         <label className="btn btn-outline" style={{ cursor: 'pointer' }}>
           <Upload size={16} /> Importa des d'Excel
           <input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} />
@@ -1594,10 +1628,10 @@ function PersonalView({ workers, obres, onSave, onImport }) {
         {importMsg && <span className="badge badge-neutral">{importMsg}</span>}
       </div>
       <div style={{ fontSize: 12, color: '#8a8478', marginTop: -8 }}>
-        Columnes esperades: <strong>Nom, PIN, Rol, Preu hora, Preu dieta, Preu desplaçament, Obres</strong> (Obres separades per comes, amb el mateix nom que a l'apartat Obres).
+        Columnes esperades: <strong>Nom, PIN, Rol, Preu hora, Preu dieta, Preu desplaçament, Obres</strong> (Obres separades per comes, amb el mateix nom que a l'apartat Obres). La importació és només per al personal propi.
       </div>
 
-      {showNew && <WorkerForm title="Nou treballador" form={form} setForm={setForm} obres={obres} onSave={save} onCancel={cancel} />}
+      {showNew && <WorkerForm title={form.external ? 'Nou treballador extern' : 'Nou treballador'} form={form} setForm={setForm} obres={obres} onSave={save} onCancel={cancel} />}
 
       <div>
         <span className="label">Filtra per obra assignada</span>
@@ -1607,7 +1641,7 @@ function PersonalView({ workers, obres, onSave, onImport }) {
         </select>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 12 }}>
+      <div style={gridStyle}>
         {activeWorkers.map(w => (
           <React.Fragment key={w.id}>
             <WorkerCard w={w} obres={obres} onEdit={startEdit} onToggleActive={toggleActive} />
@@ -1617,17 +1651,50 @@ function PersonalView({ workers, obres, onSave, onImport }) {
         {activeWorkers.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>Cap treballador actiu amb aquest filtre.</div>}
       </div>
 
-      {inactiveWorkers.length > 0 && (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+        <div style={{ fontWeight: 800, fontSize: 13, color: '#8a8478', borderTop: '1px solid #e7e2d8', paddingTop: 14 }}>Treballadors d'altres empreses</div>
+        {activeExterns.length === 0 && <div style={{ fontSize: 13, color: '#8a8478' }}>Cap treballador extern actiu amb aquest filtre.</div>}
+        {externCompanies.map(company => (
+          <div key={company}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{company}</div>
+            <div style={gridStyle}>
+              {activeExterns.filter(w => (w.company || 'Sense empresa') === company).map(w => (
+                <React.Fragment key={w.id}>
+                  <WorkerCard w={w} obres={obres} onEdit={startEdit} onToggleActive={toggleActive} />
+                  {editingId === w.id && <WorkerForm title="Edita treballador extern" form={form} setForm={setForm} obres={obres} onSave={save} onCancel={cancel} />}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {(inactiveWorkers.length > 0 || inactiveExterns.length > 0) && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
           <div style={{ fontWeight: 800, fontSize: 13, color: '#8a8478', borderTop: '1px solid #e7e2d8', paddingTop: 14 }}>Treballadors inactius</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px,1fr))', gap: 12 }}>
-            {inactiveWorkers.map(w => (
-              <React.Fragment key={w.id}>
-                <WorkerCard w={w} obres={obres} onEdit={startEdit} onToggleActive={toggleActive} />
-                {editingId === w.id && <WorkerForm title="Edita treballador" form={form} setForm={setForm} obres={obres} onSave={save} onCancel={cancel} />}
-              </React.Fragment>
-            ))}
-          </div>
+          {inactiveWorkers.length > 0 && (
+            <div style={gridStyle}>
+              {inactiveWorkers.map(w => (
+                <React.Fragment key={w.id}>
+                  <WorkerCard w={w} obres={obres} onEdit={startEdit} onToggleActive={toggleActive} />
+                  {editingId === w.id && <WorkerForm title="Edita treballador" form={form} setForm={setForm} obres={obres} onSave={save} onCancel={cancel} />}
+                </React.Fragment>
+              ))}
+            </div>
+          )}
+          {inactiveExterns.length > 0 && (
+            <>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>Externs inactius</div>
+              <div style={gridStyle}>
+                {inactiveExterns.map(w => (
+                  <React.Fragment key={w.id}>
+                    <WorkerCard w={w} obres={obres} onEdit={startEdit} onToggleActive={toggleActive} />
+                    {editingId === w.id && <WorkerForm title="Edita treballador extern" form={form} setForm={setForm} obres={obres} onSave={save} onCancel={cancel} />}
+                  </React.Fragment>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -1696,7 +1763,7 @@ function SolicitudsAdminView({ workers, obres, solicituds, fitxatges, onDecision
 /* ============================= Calendari (cap d'obra) ============================= */
 function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, onSetPla, onDeletePla, onAssignRange }) {
   const [mode, setMode] = useState('worker');
-  const sortedWorkers = [...workers].filter(w => w.active !== false && w.role !== 'cap_obra').sort((a, b) => a.name.localeCompare(b.name, 'ca'));
+  const sortedWorkers = [...workers].filter(w => w.active !== false && !w.external && w.role !== 'cap_obra').sort((a, b) => a.name.localeCompare(b.name, 'ca'));
   const sortedObres = [...obres].sort((a, b) => a.name.localeCompare(b.name, 'ca'));
   const [selectedWorkerId, setSelectedWorkerId] = useState(sortedWorkers[0]?.id || '');
   const [selectedObraId, setSelectedObraId] = useState(sortedObres[0]?.id || '');
@@ -1756,7 +1823,7 @@ function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, on
     setEditObraId('');
   };
 
-  const obraWorkers = selectedObraId ? workers.filter(w => w.active !== false && w.obraIds.includes(selectedObraId) && w.role !== 'cap_obra') : [];
+  const obraWorkers = selectedObraId ? workers.filter(w => w.active !== false && !w.external && w.obraIds.includes(selectedObraId) && w.role !== 'cap_obra') : [];
 
   const countForObraDay = (date) => {
     if (date <= today) return obraWorkers.filter(w => fitxatges.some(f => f.workerId === w.id && f.date === date && f.obraId === selectedObraId && !f.baixa)).length;

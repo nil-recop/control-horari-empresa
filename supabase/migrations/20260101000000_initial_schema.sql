@@ -12,6 +12,11 @@ create table if not exists workers (
   pin text not null,
   role text not null check (role in ('treballador','encarregat','cap_obra')),
   active boolean not null default true,
+  -- Treballadors d'altres empreses (subcontractes): sense accés a l'app
+  -- (no surten a la pantalla d'inici de sessió) i sense PIN.
+  external boolean not null default false,
+  company text,
+  position text,
   hourly_rate numeric not null default 0,
   dieta_rate numeric not null default 0,
   desplacament_rate numeric not null default 0,

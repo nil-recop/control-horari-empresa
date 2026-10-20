@@ -196,6 +196,18 @@ from workers w
 where f.worker_id = w.id and f.hourly_rate is null;
 ```
 
+## Actualització necessària a la base de dades (treballadors d'altres empreses)
+
+Els treballadors externs (subcontractes) es guarden a la mateixa taula de
+personal, marcats com a externs i sense PIN. Executa això una sola vegada al
+SQL Editor:
+
+```sql
+alter table workers add column if not exists external boolean not null default false;
+alter table workers add column if not exists company text;
+alter table workers add column if not exists position text;
+```
+
 ## Resolució de problemes
 
 **"Could not find the table 'public.workers' in the schema cache"**
