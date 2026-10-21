@@ -15,7 +15,7 @@ create table if not exists workers (
   -- (no surten a la pantalla d'inici de sessió) i sense PIN.
   external boolean not null default false,
   company text,
-  position text,
+  position text, -- càrrec (propis i externs)
   hourly_rate numeric not null default 0,
   dieta_rate numeric not null default 0,
   desplacament_rate numeric not null default 0,
@@ -97,7 +97,7 @@ create table if not exists assistencia (
   obra_id uuid not null references obres(id) on delete cascade,
   worker_id uuid not null references workers(id) on delete cascade,
   present boolean not null,
-  marked_by uuid references workers(id),
+  marked_by uuid references workers(id) on delete set null,
   created_at timestamptz not null default now(),
   unique (date, obra_id, worker_id)
 );

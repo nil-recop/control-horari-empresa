@@ -113,100 +113,12 @@ supabase link --project-ref rtpsjbtvvnjigpuygrek
 supabase db push
 ```
 
-## Actualització necessària a la base de dades (fitxatges a diverses obres + notificacions que naveguen)
+## Actualització de la base de dades
 
-Aquesta versió permet marcar hores a diverses obres el mateix dia i fa que
-clicar una notificació et porti directament a l'apartat corresponent. Com
-que ja teniu taules creades, **cal executar això una sola vegada** al SQL
-Editor de Supabase perquè funcioni:
-
-```sql
-alter table notificacions add column if not exists target text;
-
-alter table fitxatges drop constraint if exists fitxatges_worker_id_date_key;
-alter table fitxatges add constraint fitxatges_worker_id_date_obra_id_key unique (worker_id, date, obra_id);
-```
-
-Si mai torneu a crear el projecte des de zero amb `schema.sql` (o amb
-`supabase/migrations/`), aquest pas ja hi és inclòs i no cal fer-lo a mà.
-
-## Actualització necessària a la base de dades (calendari de planificació)
-
-Aquesta versió afegeix una nova secció "Calendari" (cap d'obra) que
-necessita una taula nova. Executa això una sola vegada al SQL Editor:
-
-```sql
-create table if not exists planificacio (
-  id uuid primary key default gen_random_uuid(),
-  worker_id uuid not null references workers(id) on delete cascade,
-  date date not null,
-  obra_id uuid references obres(id) on delete set null,
-  created_at timestamptz not null default now(),
-  unique (worker_id, date)
-);
-
-alter table planificacio enable row level security;
-create policy "anon full access" on planificacio for all using (true) with check (true);
-
-grant usage on schema public to anon, authenticated;
-grant select, insert, update, delete on all tables in schema public to anon, authenticated;
-grant usage, select on all sequences in schema public to anon, authenticated;
-
--- Perquè les properes taules noves ja tinguin permisos sense haver de
--- repetir aquest pas cada vegada.
-alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated;
-alter default privileges in schema public grant usage, select on sequences to anon, authenticated;
-```
-
-## Actualització necessària a la base de dades (obra obligatòria a les vacances)
-
-Les sol·licituds de vacances ara indiquen l'obra. Executa això una sola
-vegada al SQL Editor:
-
-```sql
-alter table solicituds add column if not exists obra_id uuid references obres(id) on delete set null;
-```
-
-## Actualització necessària a la base de dades (baixa lògica de personal + preus congelats)
-
-El personal ja no s'elimina (per no perdre l'historial): es marca com a
-inactiu. I els preus (hora/dieta/desplaçament) queden congelats al
-fitxatge del moment, perquè un canvi de preu no alteri el cost d'hores ja
-registrades. Executa això una sola vegada al SQL Editor:
-
-```sql
-alter table workers add column if not exists active boolean not null default true;
-
-alter table fitxatges add column if not exists hourly_rate numeric;
-alter table fitxatges add column if not exists dieta_rate numeric;
-alter table fitxatges add column if not exists desplacament_rate numeric;
-```
-
-**Opcional però recomanat**: per "congelar" també els fitxatges que ja
-existien abans d'aquest canvi (si no ho fas, l'aplicació seguirà
-funcionant igualment, ja que fa servir el preu actual del treballador com
-a reserva per a aquests registres antics):
-
-```sql
-update fitxatges f
-set hourly_rate = w.hourly_rate,
-    dieta_rate = w.dieta_rate,
-    desplacament_rate = w.desplacament_rate
-from workers w
-where f.worker_id = w.id and f.hourly_rate is null;
-```
-
-## Actualització necessària a la base de dades (treballadors d'altres empreses)
-
-Els treballadors externs (subcontractes) es guarden a la mateixa taula de
-personal, marcats com a externs i sense PIN. Executa això una sola vegada al
-SQL Editor:
-
-```sql
-alter table workers add column if not exists external boolean not null default false;
-alter table workers add column if not exists company text;
-alter table workers add column if not exists position text;
-```
+Executa **una sola vegada** el fitxer [`supabase/actualitzacio_completa.sql`](./supabase/actualitzacio_completa.sql)
+al SQL Editor de Supabase (New query -> enganxa tot el contingut -> Run). Aplica
+totes les columnes, taules i permisos que necessita l'aplicació i es pot
+repetir sense risc (només afegeix el que falta, no esborra dades).
 
 ## Resolució de problemes
 
