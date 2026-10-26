@@ -2299,7 +2299,7 @@ function App() {
     const isNew = !workers.some(x => x.id === w.id);
     const row = { ...workerToRow(w), id: w.id || uid() };
     const { data, error } = await supabaseClient.from('workers').upsert(row).select().single();
-    if (error) { console.error(error); return; }
+    if (error) { console.error(error); window.alert("No s'ha pogut desar el treballador: " + error.message); return; }
     const saved = workerFromRow(data);
     const prevWorker = workers.find(x => x.id === saved.id);
     setWorkers(prev => (isNew ? [...prev, saved] : prev.map(x => x.id === saved.id ? saved : x)).sort((a, b) => a.name.localeCompare(b.name, 'ca')));
