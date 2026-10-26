@@ -10,7 +10,7 @@ create table if not exists workers (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   pin text not null,
-  role text not null check (role in ('treballador','encarregat','cap_obra')),
+  role text not null check (role in ('treballador','encarregat','cap_obra','control')),
   active boolean not null default true,
   -- Treballadors d'altres empreses (subcontractes): sense accés a l'app
   -- (no surten a la pantalla d'inici de sessió) i sense PIN.
