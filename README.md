@@ -120,6 +120,14 @@ al SQL Editor de Supabase (New query -> enganxa tot el contingut -> Run). Aplica
 totes les columnes, taules i permisos que necessita l'aplicació i es pot
 repetir sense risc (només afegeix el que falta, no esborra dades).
 
+## Rols
+
+- **Treballador** i **Encarregat**: fitxatge, calendari, sol·licituds (l'encarregat, a més, centres de cost i assistència).
+- **Cap d'obra**: Resum, Calendari, Assistència i Sol·licituds.
+- **Control** (administratiu): tot el que fa el cap d'obra, més Obres i Personal.
+
+Per assignar el rol Control a un perfil, vegeu l'últim apartat de `supabase/actualitzacio_completa.sql`.
+
 ## Resolució de problemes
 
 **"Could not find the table 'public.workers' in the schema cache"**
