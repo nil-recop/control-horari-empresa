@@ -18,6 +18,19 @@ alter table fitxatges add column if not exists hourly_rate numeric;
 alter table fitxatges add column if not exists dieta_rate numeric;
 alter table fitxatges add column if not exists desplacament_rate numeric;
 
+-- 1b) Rol "Control" (nou rol administratiu): amplia els rols permesos
+do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint
+           where conrelid = 'workers'::regclass and contype = 'c' and pg_get_constraintdef(oid) ilike '%role%'
+  loop
+    execute format('alter table workers drop constraint %I', c.conname);
+  end loop;
+  alter table workers add constraint workers_role_check
+    check (role in ('treballador','encarregat','cap_obra','control'));
+end $$;
+
 -- 2) Fitxatges: una fila per treballador + data + obra (hores a diverses obres el mateix dia)
 alter table fitxatges drop constraint if exists fitxatges_worker_id_date_key;
 do $$
@@ -62,3 +75,7 @@ where f.worker_id = w.id and f.hourly_rate is null;
 
 -- 7) Refresca la memòria cau de l'API
 notify pgrst, 'reload schema';
+
+-- 8) ASSIGNA EL ROL "CONTROL" al teu perfil. Canvia el nom pel nom exacte
+--    del perfil i treu els dos guions del davant; després executa-ho:
+-- update workers set role = 'control' where name = 'NOM EXACTE DEL PERFIL';
