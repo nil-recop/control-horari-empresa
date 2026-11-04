@@ -968,7 +968,7 @@ function SolicitudsView({ user, obres, solicituds, onCreate, onUpdate }) {
 
 /* ============================= Centres de cost (encarregat) ============================= */
 function CostCenterView({ user, obres, workers, assignacionsCC, onSave }) {
-  const myObres = obres.filter(o => o.active && user.obraIds.includes(o.id)).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
+  const myObres = obres.filter(o => o.active && (['cap_obra', 'control'].includes(user.role) || user.obraIds.includes(o.id))).sort((a, b) => a.name.localeCompare(b.name, 'ca'));
   const [obraId, setObraId] = useState(myObres[0]?.id || '');
   const obra = obres.find(o => o.id === obraId);
   const [date, setDate] = useState(todayISO());
@@ -2374,12 +2374,21 @@ function App() {
     { key: 'resum', label: 'Resum', icon: Home },
     { key: 'calendari', label: 'Calendari', icon: Calendar },
     { key: 'assistencia', label: 'Assistència', icon: Users },
+    { key: 'centres', label: 'Centres de cost', icon: Briefcase },
   ];
   const mgmtStaff = [
     { key: 'obres', label: 'Obres', icon: Building2 },
     { key: 'personal', label: 'Personal', icon: Users },
   ];
   const mgmtLast = [{ key: 'solicituds_admin', label: 'Sol·licituds', icon: FileText }];
+  // El cap d'obra només veu el resum de les obres que té adjudicades; Control les veu totes.
+  const me = workers.find(w => w.id === user.id) || user;
+  const scoped = user.role === 'cap_obra';
+  const scopedObres = scoped ? obres.filter(o => me.obraIds.includes(o.id)) : obres;
+  const scopedIds = new Set(scopedObres.map(o => o.id));
+  const resumFitxatges = scoped ? fitxatges.filter(f => scopedIds.has(f.obraId)) : fitxatges;
+  const resumAssistencia = scoped ? assistencia.filter(a => scopedIds.has(a.obraId)) : assistencia;
+  const resumCC = scoped ? assignacionsCC.filter(a => scopedIds.has(a.obraId)) : assignacionsCC;
   const navItems = user.active === false ? [
     { key: 'historial', label: 'Calendari', icon: Calendar },
   ] : {
@@ -2413,8 +2422,9 @@ function App() {
       if (tab === 'solicituds') return <SolicitudsView user={user} obres={obres} solicituds={solicituds} onCreate={handleSolicitudCreate} onUpdate={handleSolicitudUpdate} />;
     }
     if (user.role === 'cap_obra' || user.role === 'control') {
-      if (tab === 'resum') return <ResumView obres={obres} workers={workers} fitxatges={fitxatges} assistencia={assistencia} assignacionsCC={assignacionsCC} />;
+      if (tab === 'resum') return <ResumView obres={scopedObres} workers={workers} fitxatges={resumFitxatges} assistencia={resumAssistencia} assignacionsCC={resumCC} />;
       if (tab === 'assistencia') return <AssistenciaView user={user} obres={obres} workers={workers} fitxatges={fitxatges} solicituds={solicituds} assistencia={assistencia} onMark={handleMarkAssistencia} onSaveHores={handleFitxatgeSave} />;
+      if (tab === 'centres') return <CostCenterView user={user} obres={obres} workers={workers} assignacionsCC={assignacionsCC} onSave={handleAssignacioCC} />;
       if (tab === 'calendari') return <CalendariView workers={workers} obres={obres} fitxatges={fitxatges} solicituds={solicituds} planificacio={planificacio} onSetPla={handleSetPla} onDeletePla={handleDeletePla} onAssignRange={handleAssignRange} />;
       if (tab === 'obres' && canManageStaff) return <ObresView obres={obres} onSave={handleObraSave} />;
       if (tab === 'personal' && canManageStaff) return <PersonalView workers={workers} obres={obres} onSave={handleWorkerSave} onDelete={handleWorkerDelete} onImport={handleWorkersImport} />;

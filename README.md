@@ -123,8 +123,8 @@ repetir sense risc (només afegeix el que falta, no esborra dades).
 ## Rols
 
 - **Treballador** i **Encarregat**: fitxatge, calendari, sol·licituds (l'encarregat, a més, centres de cost i assistència).
-- **Cap d'obra**: Resum, Calendari, Assistència i Sol·licituds.
-- **Control** (administratiu): tot el que fa el cap d'obra, més Obres i Personal.
+- **Cap d'obra**: Resum (només de les obres que té assignades), Calendari, Assistència, Centres de cost i Sol·licituds.
+- **Control** (administratiu): tot el que fa el cap d'obra, però amb el Resum de totes les obres, més Obres i Personal.
 
 Per assignar el rol Control a un perfil, vegeu l'últim apartat de `supabase/actualitzacio_completa.sql`.
 
