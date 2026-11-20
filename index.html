@@ -833,12 +833,12 @@ function HistorialView({ user, obres, fitxatges, solicituds, planificacio }) {
       </div>
 
       <div className="card">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, fontSize: 12, fontWeight: 700, color: '#5f5a50', textAlign: 'center', marginBottom: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4, fontSize: 12, fontWeight: 700, color: '#5f5a50', textAlign: 'center', marginBottom: 6 }}>
           {['Dl', 'Dt', 'Dc', 'Dj', 'Dv', 'Ds', 'Dg'].map(d => <div key={d}>{d}</div>)}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {weeks.map((week, wi) => (
-            <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4 }}>
+            <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4 }}>
               {week.map((date, di) => {
                 if (!date) return <div key={di} />;
                 const info = dayInfo(date);
@@ -853,11 +853,11 @@ function HistorialView({ user, obres, fitxatges, solicituds, planificacio }) {
                 return (
                   <button key={di} type="button" aria-pressed={isSelected} aria-label={`${Number(date.slice(8, 10))}${isToday ? ", avui" : ""}${sub ? ", " + sub : ""}`} onClick={() => setSelectedDate(isSelected ? null : date)} style={{
                     background: bg, border: `1.5px solid ${isSelected ? BRAND.terracotta : '#e7e2d8'}`, borderRadius: 8, padding: '6px 2px',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer', minHeight: 44,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer', minHeight: 52, minWidth: 0, overflow: 'hidden', boxSizing: 'border-box',
                     boxShadow: isToday ? `inset 0 0 0 2px ${BRAND.black}` : 'none',
                   }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color }}>{Number(date.slice(8, 10))}</span>
-                    {sub && <span style={{ fontSize: 12, fontWeight: 700, color, textAlign: 'center', lineHeight: 1.1 }}>{sub}</span>}
+                    {sub && <span title={sub} style={{ fontSize: 12, fontWeight: 700, color, textAlign: 'center', lineHeight: 1.1, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>}
                   </button>
                 );
               })}
@@ -2045,12 +2045,12 @@ function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, on
           </div>
           <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveMonth(1)}><ChevronRight size={16} /></button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4, fontSize: 12, fontWeight: 700, color: '#5f5a50', textAlign: 'center', marginBottom: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4, fontSize: 12, fontWeight: 700, color: '#5f5a50', textAlign: 'center', marginBottom: 6 }}>
           {['Dl', 'Dt', 'Dc', 'Dj', 'Dv', 'Ds', 'Dg'].map(d => <div key={d}>{d}</div>)}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {weeks.map((week, wi) => (
-            <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 4 }}>
+            <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 4 }}>
               {week.map((date, di) => {
                 if (!date) return <div key={di} />;
                 const isToday = date === today;
@@ -2069,11 +2069,11 @@ function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, on
                 return (
                   <button key={di} type="button" aria-pressed={isSelected} aria-label={`${Number(date.slice(8, 10))}${isToday ? ", avui" : ""}${sub ? ", " + sub : ""}`} onClick={() => (mode === 'worker' ? openDayEditor(date) : setSelectedDate(isSelected ? null : date))} style={{
                     background: bg, border: `1.5px solid ${isSelected ? BRAND.terracotta : '#e7e2d8'}`, borderRadius: 8, padding: '6px 2px',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer', minHeight: 44,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer', minHeight: 52, minWidth: 0, overflow: 'hidden', boxSizing: 'border-box',
                     boxShadow: isToday ? `inset 0 0 0 2px ${BRAND.black}` : 'none',
                   }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color }}>{Number(date.slice(8, 10))}</span>
-                    {sub && <span style={{ fontSize: 12, fontWeight: 700, color, textAlign: 'center', lineHeight: 1.1 }}>{sub}</span>}
+                    {sub && <span title={sub} style={{ fontSize: 12, fontWeight: 700, color, textAlign: 'center', lineHeight: 1.1, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</span>}
                   </button>
                 );
               })}
