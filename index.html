@@ -276,7 +276,7 @@ function GlobalStyles() {
   return (
     <style>{`
       .recop-app { font-family: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height:1.45; background:#f7f5f2; color:${BRAND.black}; min-height:100vh; }
-      .recop-header { background:${BRAND.black}; color:${BRAND.white}; }
+      .recop-header { background:${BRAND.white}; color:${BRAND.black}; border-bottom:2px solid ${BRAND.black}; }
       .stripe { height:8px; background:repeating-linear-gradient(135deg, ${BRAND.terracotta} 0 14px, ${BRAND.olive} 14px 28px); }
       .stripe-hero { height:28px; }
       .display { font-family:${DISPLAY}; letter-spacing:-.015em; }
@@ -304,7 +304,7 @@ function GlobalStyles() {
       .skip-link { position:absolute; left:8px; top:-60px; z-index:100; background:${BRAND.black}; color:${BRAND.white}; padding:12px 16px; border-radius:8px; font-weight:700; text-decoration:none; }
       .skip-link:focus { top:8px; }
       :focus-visible { outline:3px solid ${BRAND.black}; outline-offset:2px; box-shadow:0 0 0 6px ${BRAND.white}; }
-      .recop-header :focus-visible, .btn-primary:focus-visible, .nav-item-desktop.active:focus-visible { outline-color:${BRAND.white}; box-shadow:0 0 0 5px ${BRAND.black}; }
+      .btn-primary:focus-visible, .nav-item-desktop.active:focus-visible { outline-color:${BRAND.white}; box-shadow:0 0 0 5px ${BRAND.black}; }
       .btn:disabled { opacity:.6; }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; } }
       @media (forced-colors: active) { .btn, .input, .select, .textarea, .card { border:1px solid CanvasText; } }
@@ -448,14 +448,14 @@ function Header({ user, notifs, onLogout, onNotifClick }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Logo size={30} />
-          <div style={{ lineHeight: 1.2 }}><div className="display" style={{ fontSize: 16, color: '#fff', fontWeight: 800 }}>{user.name}</div><div style={{ fontSize: 13, color: '#d9d3c7' }}>{ROLE_LABEL[user.role]}</div></div>
+          <div style={{ lineHeight: 1.2 }}><div className="display" style={{ fontSize: 16, color: '#000', fontWeight: 800 }}>{user.name}</div><div style={{ fontSize: 13, color: '#4a463e' }}>{ROLE_LABEL[user.role]}</div></div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button type="button" aria-label={unread > 0 ? `Notificacions (${unread} sense llegir)` : 'Notificacions'} aria-expanded={open} aria-haspopup="true" onClick={() => setOpen(o => !o)} style={{ minWidth: 44, minHeight: 44, position: 'relative', background: 'transparent', border: 'none', color: '#fff', padding: 8, cursor: 'pointer' }}>
+          <button type="button" aria-label={unread > 0 ? `Notificacions (${unread} sense llegir)` : 'Notificacions'} aria-expanded={open} aria-haspopup="true" onClick={() => setOpen(o => !o)} style={{ minWidth: 44, minHeight: 44, position: 'relative', background: 'transparent', border: 'none', color: '#000', padding: 8, cursor: 'pointer' }}>
             <Bell size={20} />
             {unread > 0 && <span style={{ position: 'absolute', top: 6, right: 6, background: BRAND.terracotta, width: 8, height: 8, borderRadius: '50%' }} />}
           </button>
-          <button type="button" aria-label="Tanca la sessió" onClick={onLogout} style={{ minWidth: 44, minHeight: 44, background: 'transparent', border: 'none', color: '#fff', padding: 8, cursor: 'pointer' }}>
+          <button type="button" aria-label="Tanca la sessió" onClick={onLogout} style={{ minWidth: 44, minHeight: 44, background: 'transparent', border: 'none', color: '#000', padding: 8, cursor: 'pointer' }}>
             <LogOut size={20} />
           </button>
         </div>
@@ -472,7 +472,6 @@ function Header({ user, notifs, onLogout, onNotifClick }) {
           </div>
         )}
       </div>
-      <div className="stripe" aria-hidden="true" />
     </header>
   );
 }
