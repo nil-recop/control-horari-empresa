@@ -16,6 +16,9 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <!-- Babel: permet escriure el component en JSX sense pas de compilació previ (Node/npm) -->
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap" rel="stylesheet" />
 </head>
 <body>
   <div id="root"></div>
@@ -124,6 +127,7 @@ const ToggleRight = ({ size = 20, color = 'currentColor', ...rest }) => (
 );
 
 /* ============================= Brand tokens ============================= */
+const DISPLAY = "'Bricolage Grotesque', 'Atkinson Hyperlegible', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif";
 const BRAND = {
   white: '#ffffff',
   black: '#000000',
@@ -271,10 +275,12 @@ function GlobalStyles() {
   useA11yEnhancer();
   return (
     <style>{`
-      .recop-app { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background:#f7f5f2; color:${BRAND.black}; min-height:100vh; }
+      .recop-app { font-family: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height:1.45; background:#f7f5f2; color:${BRAND.black}; min-height:100vh; }
       .recop-header { background:${BRAND.black}; color:${BRAND.white}; }
-      .stripe { height:4px; background:repeating-linear-gradient(45deg, ${BRAND.terracotta} 0 10px, ${BRAND.olive} 10px 20px); }
-      .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:10px 16px; border-radius:8px; font-weight:600; font-size:14px; border:1px solid transparent; cursor:pointer; transition:opacity .15s; }
+      .stripe { height:8px; background:repeating-linear-gradient(135deg, ${BRAND.terracotta} 0 14px, ${BRAND.olive} 14px 28px); }
+      .stripe-hero { height:28px; }
+      .display { font-family:${DISPLAY}; letter-spacing:-.015em; }
+      .btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:10px 18px; border-radius:6px; font-family:inherit; font-weight:700; font-size:15px; border:1.5px solid transparent; cursor:pointer; transition:opacity .15s; }
       .btn:active { opacity:.8; }
       .btn:disabled { opacity:.45; cursor:not-allowed; }
       .btn-primary { background:${BRAND.terracotta}; color:${BRAND.white}; }
@@ -282,10 +288,10 @@ function GlobalStyles() {
       .btn-ghost { background:transparent; color:${BRAND.black}; border-color:#6f695d; }
       .btn-outline { background:${BRAND.white}; color:${BRAND.terracotta}; border-color:${BRAND.terracotta}; }
       .btn-danger { background:${BRAND.white}; color:#b91c1c; border-color:#b91c1c; }
-      .card { background:${BRAND.white}; border:1px solid #e7e2d8; border-radius:12px; padding:16px; }
-      .input, .select, .textarea { width:100%; min-height:44px; border:1.5px solid #6f695d; border-radius:8px; padding:10px 12px; font-size:16px; background:${BRAND.white}; color:${BRAND.black}; box-sizing:border-box; font-family:inherit; }
+      .card { background:${BRAND.white}; border:1px solid #d9d3c7; border-radius:6px; padding:18px; border-top:3px solid ${BRAND.black}; }
+      .input, .select, .textarea { width:100%; min-height:44px; border:1.5px solid #6f695d; border-radius:6px; padding:10px 12px; font-size:16px; background:${BRAND.white}; color:${BRAND.black}; box-sizing:border-box; font-family:inherit; }
       .input:focus, .select:focus, .textarea:focus { outline:2px solid ${BRAND.terracotta}; outline-offset:1px; border-color:${BRAND.terracotta}; }
-      .label { font-size:13px; font-weight:700; letter-spacing:.02em; color:#6b6558; margin-bottom:4px; display:block; }
+      .label { font-size:14px; font-weight:700; color:#6b6558; margin-bottom:4px; display:block; }
       .badge { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:999px; font-size:12px; font-weight:700; white-space:nowrap; }
       .badge-neutral { background:#eeece5; color:#57524a; }
       .badge-success { background:#e9f0d9; color:${BRAND.oliveDark}; }
@@ -293,7 +299,7 @@ function GlobalStyles() {
       .badge-danger { background:#fbe4e1; color:${BRAND.terracotta}; }
       .badge-terracotta { background:${BRAND.terracotta}; color:${BRAND.white}; }
       .badge-olive { background:${BRAND.olive}; color:${BRAND.black}; }
-      body { font-size:16px; -webkit-text-size-adjust:100%; }
+      body { font-family:'Atkinson Hyperlegible', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; font-size:16px; -webkit-text-size-adjust:100%; }
       .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
       .skip-link { position:absolute; left:8px; top:-60px; z-index:100; background:${BRAND.black}; color:${BRAND.white}; padding:12px 16px; border-radius:8px; font-weight:700; text-decoration:none; }
       .skip-link:focus { top:8px; }
@@ -306,28 +312,30 @@ function GlobalStyles() {
       .nav-desktop { display:none; }
       .nav-mobile { position:fixed; bottom:0; left:0; right:0; background:${BRAND.white}; border-top:1px solid #e7e2d8; display:flex; z-index:30; padding-bottom:env(safe-area-inset-bottom); }
       .nav-item-mobile { min-height:56px; flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 2px 10px; font-size:12px; font-weight:700; color:#5f5a50; background:transparent; border:none; cursor:pointer; }
+      .nav-item-mobile { position:relative; font-family:inherit; }
       .nav-item-mobile.active { color:${BRAND.terracotta}; }
+      .nav-item-mobile.active::before { content:''; position:absolute; top:0; left:18%; right:18%; height:4px; background:${BRAND.terracotta}; border-radius:0 0 4px 4px; }
       .nav-item-desktop { display:flex; align-items:center; gap:10px; width:100%; min-height:44px; padding:10px 14px; border-radius:8px; font-size:15px; font-weight:600; font-family:inherit; text-align:left; color:#3d3a34; background:transparent; border:none; cursor:pointer; }
-      .nav-item-desktop.active { background:${BRAND.terracotta}; color:${BRAND.white}; }
+      .nav-item-desktop.active { background:${BRAND.black}; color:${BRAND.white}; box-shadow:inset 4px 0 0 ${BRAND.terracotta}; }
       .nav-item-desktop:hover:not(.active) { background:#efece3; }
       .pin-dots { display:flex; justify-content:center; gap:14px; margin:20px 0; }
       .pin-dot { width:14px; height:14px; border-radius:50%; border:2px solid ${BRAND.terracotta}; box-sizing:border-box; }
       .pin-dot.filled { background:${BRAND.terracotta}; }
       .pin-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:280px; margin:0 auto; }
-      .pin-key { background:${BRAND.white}; border:1.5px solid #6f695d; border-radius:12px; padding:16px 0; min-height:56px; font-size:22px; font-weight:700; cursor:pointer; }
+      .pin-key { font-family:${DISPLAY}; background:${BRAND.white}; border:1.5px solid #6f695d; border-radius:8px; padding:16px 0; min-height:56px; font-size:22px; font-weight:700; cursor:pointer; }
       .pin-key:active { background:#f1ede4; }
-      .worker-tile { min-height:48px; display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:12px 14px; border-radius:10px; border:1px solid #e7e2d8; background:${BRAND.white}; cursor:pointer; }
+      .worker-tile { min-height:48px; display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:12px 14px; border-radius:6px; border:1.5px solid #d9d3c7; background:${BRAND.white}; cursor:pointer; font-family:inherit; font-size:16px; }
       .worker-tile.selected { border-color:${BRAND.terracotta}; }
-      .avatar { width:36px; height:36px; border-radius:50%; background:${BRAND.olive}; color:${BRAND.black}; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:14px; flex-shrink:0; }
+      .avatar { font-family:${DISPLAY}; width:40px; height:40px; border-radius:6px; background:${BRAND.olive}; color:${BRAND.black}; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; flex-shrink:0; }
       table.recop-table { width:100%; border-collapse:collapse; font-size:14px; }
-      table.recop-table th { text-align:left; padding:8px 10px; background:#f1ede4; font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:#6b6558; }
-      table.recop-table td { padding:8px 10px; border-top:1px solid #eee9de; }
-      table.recop-table tr.total-row td { font-weight:800; border-top:2px solid ${BRAND.black}; }
+      table.recop-table th { text-align:left; padding:10px 10px; background:#efe9dd; border-bottom:2px solid #000; font-size:13px; font-weight:700; color:#4a463e; }
+      table.recop-table td { padding:10px 10px; font-variant-numeric:tabular-nums; border-top:1px solid #eee9de; }
+      table.recop-table tr.total-row td { font-family:${DISPLAY}; font-weight:800; font-size:15px; border-top:2px solid ${BRAND.black}; }
       .chip { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:999px; background:#efece3; font-size:12px; font-weight:600; }
       .segmented { display:inline-flex; border:1px solid #6f695d; border-radius:8px; overflow:hidden; }
       .segmented button { min-height:44px; padding:8px 14px; font-size:14px; font-weight:600; background:${BRAND.white}; border:none; cursor:pointer; color:#57524a; }
       .segmented button.active { background:${BRAND.black}; color:${BRAND.white}; }
-      .notif-panel { position:absolute; right:12px; top:56px; width:320px; max-width:88vw; background:${BRAND.white}; border:1px solid #e7e2d8; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.25); z-index:40; max-height:70vh; overflow:auto; color:${BRAND.black}; }
+      .notif-panel { font-family:inherit; position:absolute; right:12px; top:56px; width:320px; max-width:88vw; background:${BRAND.white}; border:1px solid #e7e2d8; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.25); z-index:40; max-height:70vh; overflow:auto; color:${BRAND.black}; }
       .file-drop { border:1.5px dashed #d8d3c9; border-radius:10px; padding:16px; text-align:center; cursor:pointer; background:#faf9f6; display:block; }
       @media (min-width: 860px) {
         .nav-mobile { display:none; }
@@ -388,17 +396,18 @@ function LoginScreen({ workers, onLogin }) {
 
   return (
     <div className="recop-app" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div className="stripe" />
+      <div className="stripe stripe-hero" aria-hidden="true" />
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' }}>
         <div style={{ width: '100%', maxWidth: 380 }}>
-          <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}><Logo size={64} /></div>
-            <div style={{ fontSize: 13, color: '#6b6558', fontWeight: 600, letterSpacing: '.03em' }}>CONTROL HORARI D'OBRA</div>
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ marginBottom: 14 }}><Logo size={56} /></div>
+            <h1 className="display" style={{ margin: 0, fontSize: 34, lineHeight: 1.05, fontWeight: 800 }}>Control horari d'obra</h1>
+            <p style={{ margin: '8px 0 0', fontSize: 16, color: '#4a463e' }}>Tria el teu nom i fitxa en segons.</p>
           </div>
 
           {!selected ? (
             <div>
-              <span className="label">Selecciona el teu nom</span>
+              <span className="label">El teu nom</span>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto' }}>
                 {sortedWorkers.map(w => (
                   <button key={w.id} className="worker-tile" onClick={() => setSelected(w)}>
@@ -418,10 +427,10 @@ function LoginScreen({ workers, onLogin }) {
               <button className="btn btn-ghost" style={{ marginBottom: 12 }} onClick={() => { setSelected(null); setPin(''); setError(''); }}>
                 <ChevronLeft size={16} /> Canvia d'usuari
               </button>
-              <div style={{ textAlign: 'center', fontWeight: 700, marginBottom: 4 }}>{selected.name}</div>
-              <div style={{ textAlign: 'center', fontSize: 13, color: '#5f5a50', marginBottom: 8 }}>Introdueix el teu PIN</div>
+              <h2 className="display" style={{ textAlign: 'center', fontWeight: 800, fontSize: 24, margin: '0 0 4px' }}>{selected.name}</h2>
+              <div style={{ textAlign: 'center', fontSize: 15, color: '#4a463e', marginBottom: 8 }}>Introdueix el teu PIN de 4 dígits</div>
               <PinPad value={pin} onChange={setPin} onComplete={attempt} />
-              {error && <div style={{ textAlign: 'center', color: BRAND.terracotta, fontWeight: 700, marginTop: 10, fontSize: 13 }}>{error}</div>}
+              {error && <div role="alert" style={{ textAlign: 'center', color: BRAND.terracotta, fontWeight: 700, marginTop: 10, fontSize: 15 }}>{error}</div>}
             </div>
           )}
         </div>
@@ -439,7 +448,7 @@ function Header({ user, notifs, onLogout, onNotifClick }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Logo size={30} />
-          <div style={{ fontSize: 12, color: '#c9c4b8', fontWeight: 600, letterSpacing: '.03em' }}>{user.name} · {ROLE_LABEL[user.role]}</div>
+          <div style={{ lineHeight: 1.2 }}><div className="display" style={{ fontSize: 16, color: '#fff', fontWeight: 800 }}>{user.name}</div><div style={{ fontSize: 13, color: '#d9d3c7' }}>{ROLE_LABEL[user.role]}</div></div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button type="button" aria-label={unread > 0 ? `Notificacions (${unread} sense llegir)` : 'Notificacions'} aria-expanded={open} aria-haspopup="true" onClick={() => setOpen(o => !o)} style={{ minWidth: 44, minHeight: 44, position: 'relative', background: 'transparent', border: 'none', color: '#fff', padding: 8, cursor: 'pointer' }}>
@@ -660,7 +669,7 @@ function FitxatgeView({ user, obres, fitxatges, onSave, onDelete }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 10 }}>
           <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveDate(-1)}><ChevronLeft size={16} /></button>
           <div style={{ textAlign: 'center', flex: 1 }}>
-            <div style={{ fontWeight: 800, fontSize: 15, textTransform: 'capitalize' }}>{fmtDate(date)}</div>
+            <div className="display" style={{ fontWeight: 800, fontSize: 18, textTransform: 'capitalize' }}>{fmtDate(date)}</div>
             <input type="date" className="input" style={{ marginTop: 6, textAlign: 'center' }} value={date} onChange={e => setDate(e.target.value)} />
           </div>
           <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveDate(1)}><ChevronRight size={16} /></button>
@@ -815,7 +824,7 @@ function HistorialView({ user, obres, fitxatges, solicituds, planificacio }) {
       <div className="card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveMonth(-1)}><ChevronLeft size={16} /></button>
-          <div style={{ fontWeight: 800, fontSize: 15, textTransform: 'capitalize' }}>
+          <div className="display" style={{ fontWeight: 800, fontSize: 18, textTransform: 'capitalize' }}>
             {new Date(ym + '-01T00:00:00').toLocaleDateString('ca-ES', { month: 'long', year: 'numeric' })}
           </div>
           <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveMonth(1)}><ChevronRight size={16} /></button>
@@ -2031,7 +2040,7 @@ function CalendariView({ workers, obres, fitxatges, solicituds, planificacio, on
       <div className="card">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveMonth(-1)}><ChevronLeft size={16} /></button>
-          <div style={{ fontWeight: 800, fontSize: 15, textTransform: 'capitalize' }}>
+          <div className="display" style={{ fontWeight: 800, fontSize: 18, textTransform: 'capitalize' }}>
             {new Date(ym + '-01T00:00:00').toLocaleDateString('ca-ES', { month: 'long', year: 'numeric' })}
           </div>
           <button className="btn btn-ghost" style={{ padding: 6 }} onClick={() => moveMonth(1)}><ChevronRight size={16} /></button>
