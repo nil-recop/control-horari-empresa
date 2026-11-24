@@ -278,7 +278,8 @@ const ROLE_LABEL = { treballador: 'Treballador', encarregat: 'Encarregat', cap_o
 const workerFromRow = (r) => ({ id: r.id, name: r.name, pin: r.pin, role: r.role, active: r.active !== false, external: r.external === true, company: r.company || '', position: r.position || '', hourlyRate: r.hourly_rate, dietaRate: r.dieta_rate, desplacamentRate: r.desplacament_rate, obraIds: r.obra_ids || [] });
 const workerToRow = (w) => ({ id: w.id, name: w.name, pin: w.external ? '' : (w.pin || ''), role: w.external ? 'treballador' : w.role, active: w.active !== false, external: !!w.external, company: w.external ? ((w.company || '').trim() || null) : null, position: (w.position || '').trim() || null, hourly_rate: Number(w.hourlyRate) || 0, dieta_rate: Number(w.dietaRate) || 0, desplacament_rate: Number(w.desplacamentRate) || 0, obra_ids: w.obraIds || [] });
 
-const obraFromRow = (r) => ({ id: r.id, name: r.name, address: r.address, active: r.active, costCenters: r.cost_centers || [] });
+const sortCC = (list) => [...(list || [])].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ca', { numeric: true, sensitivity: 'base' }));
+const obraFromRow = (r) => ({ id: r.id, name: r.name, address: r.address, active: r.active, costCenters: sortCC(r.cost_centers) });
 const obraToRow = (o) => ({ id: o.id, name: o.name, address: o.address, active: o.active, cost_centers: o.costCenters || [] });
 
 const fitxatgeFromRow = (r) => ({ id: r.id, workerId: r.worker_id, date: r.date, baixa: r.baixa, obraId: r.obra_id, hours: r.hours, dieta: r.dieta, desplacament: r.desplacament, comment: r.comment || '', hourlyRate: r.hourly_rate, dietaRate: r.dieta_rate, desplacamentRate: r.desplacament_rate, file: r.file_path ? { name: r.file_name, path: r.file_path } : null });
@@ -1497,7 +1498,7 @@ function ResumView({ obres, workers, fitxatges, assistencia, assignacionsCC }) {
 
 /* ============================= Obres (cap d'obra) ============================= */
 function ObraForm({ title, form, setForm, newCC, setNewCC, onSave, onCancel }) {
-  const addCC = () => { if (!newCC.trim()) return; setForm(f => ({ ...f, costCenters: [...f.costCenters, { id: uid(), name: newCC.trim() }] })); setNewCC(''); };
+  const addCC = () => { if (!newCC.trim()) return; setForm(f => ({ ...f, costCenters: sortCC([...f.costCenters, { id: uid(), name: newCC.trim() }]) })); setNewCC(''); };
   const removeCC = (id) => setForm(f => ({ ...f, costCenters: f.costCenters.filter(c => c.id !== id) }));
   return (
     <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 480, gridColumn: '1 / -1' }}>
@@ -1533,7 +1534,7 @@ function ObresView({ obres, onSave }) {
   const [newCC, setNewCC] = useState('');
   const [filter, setFilter] = useState('totes');
 
-  const startEdit = (o) => { setForm({ ...o, costCenters: [...o.costCenters] }); setEditingId(o.id); setShowNew(false); };
+  const startEdit = (o) => { setForm({ ...o, costCenters: sortCC(o.costCenters) }); setEditingId(o.id); setShowNew(false); };
   const startNew = () => { setForm({ ...blank, id: uid() }); setShowNew(true); setEditingId(null); };
   const cancel = () => { setEditingId(null); setShowNew(false); };
   const save = () => { if (!form.name.trim()) return; onSave(form); setEditingId(null); setShowNew(false); setForm(blank); };
